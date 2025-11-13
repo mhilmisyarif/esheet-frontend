@@ -2,7 +2,7 @@
 
 This is the frontend application for the e-Sheet (Electronic Datasheet) system, built with React and Vite. It provides the user interface for laboratory technicians, engineers, and admins to manage, fill out, and approve digital test worksheets, replacing a manual paper-based process.
 
-This application is designed to connect to the [e-Sheet Backend API](https://www.google.com/search?q=https://github.com/YOUR_USERNAME/esheet-backend) (which we also built) for all data and authentication.
+This application is designed to connect to the [e-Sheet Backend API](https://github.com/mhilmisyarif/esheet-backend) (which we also built) for all data and authentication.
 
 ## ✨ Features
 
