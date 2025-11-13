@@ -1,14 +1,14 @@
 // src/components/KlausulButirTable.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import api from "../mocks/api";
+// import api from "../mocks/api";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
-
+import apiClient from "../api";
 /**
  * KlausulButirTable.jsx
  * - Per-klausul meta (tester, tanggal, suhu, kelembaban)
  * - Per-klausul tables (CRUD table lampiran)
- * - Images uploader (sample gallery) — displayed at bottom
+ * - Images uploader (sample gallery) — displayed at bottom + modal via menu
  * - Autosave (butir/meta/tables/images) + parent registration
  *
  * Note: ensure src/mocks/api.js exposes:
@@ -18,7 +18,13 @@ import { FaSpinner } from "react-icons/fa";
  * - saveKlausulTables(sampleId, klausulCode, tables)
  * - uploadImage(sampleId, file)
  * - deleteImage(sampleId, imageId)
- * - updateImages(sampleId, images)  (optional, used to persist image metadata)
+ * - updateImages(sampleId, images)  (optional)
+ *
+ * Props:
+ * - report, fullReport
+ * - onChangeReport (optional)
+ * - onRegisterFlush (optional)
+ * - onDeleteSample (optional) - called when user chooses Hapus in menu
  */
 
 const DECISIONS = [
@@ -32,11 +38,16 @@ export default function KlausulButirTable({
   fullReport,
   onChangeReport,
   onRegisterFlush,
+  onDeleteSample,
 }) {
   const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
   const [editingButir, setEditingButir] = useState(null);
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [imagesState, setImagesState] = useState(report.images || []);
+
+  // menu/modal states (NEW)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
 
   // dirtyRef keys:
   // - <butirKode>
@@ -50,6 +61,8 @@ export default function KlausulButirTable({
     report.sample_id ||
     (fullReport && fullReport.sample && fullReport.sample.id) ||
     null;
+  const reportId =
+    (fullReport && fullReport.id) || (report && report.id) || null;
 
   // init local state and persisted snapshot
   useEffect(() => {
@@ -138,13 +151,9 @@ export default function KlausulButirTable({
   // images handlers: ImageUploader will upload/delete via api; here we just update state & mark dirty
   function setImages(images) {
     setImagesState(images);
-    // mark dirty to ensure flush will persist images metadata if API supports it
     markDirty("images");
-    // propagate up optionally (report object)
     onChangeReport &&
       onChangeReport((prev) => {
-        // if onChangeReport expects array, provide new klausul arr; else caller can pick from state
-        // We'll call onChangeReport with new klausul arr where images not included; parent ReportEditor stores images separately
         return prev;
       });
   }
@@ -184,32 +193,12 @@ export default function KlausulButirTable({
         butirKode,
         text,
       });
-      toast.error("Gagal menyimpan catatan: sample tidak ditemukan");
-      return { ok: false, error: "missing_sample" };
+      toast.error("Gagal menyimpan catatan (sampleId hilang)");
+      return { ok: false };
     }
-
-    const key = `${klausulCode || "unknown"}-${butirKode}`;
-    // optimistic update
-    const next = JSON.parse(JSON.stringify(localKlausulArr));
-    next.forEach((k) => {
-      if (k.klausul === (klausulCode || k.klausul)) {
-        k.sub_klausul.forEach((s) =>
-          s.butir.forEach((b) => {
-            if (b.kode === butirKode) {
-              b.hasil_catatan = text;
-              b.last_modified_by = "demo-user";
-              b.last_modified_at = new Date().toISOString();
-            }
-          })
-        );
-      }
-    });
-    setLocalKlausulArr(next);
-    onChangeReport && onChangeReport(next);
 
     try {
       setIsAutosaving(true);
-      setTimeout(() => {}, 0);
       const res = await api.updateButir(sampleId, klausulCode, butirKode, {
         hasil_catatan: text,
         by: "demo-user",
@@ -232,27 +221,6 @@ export default function KlausulButirTable({
     } finally {
       setIsAutosaving(false);
     }
-  }
-
-  // bulkSet only local (mark all butir dirty)
-  function bulkSetKlausul(klausulCode, decision, { clearNotes = false } = {}) {
-    const next = JSON.parse(JSON.stringify(localKlausulArr));
-    next.forEach((k) => {
-      if (k.klausul === klausulCode) {
-        k.sub_klausul.forEach((s) =>
-          s.butir.forEach((b) => {
-            b.keputusan = decision;
-            if (clearNotes) b.hasil_catatan = "";
-            b.last_modified_by = "demo-user";
-            b.last_modified_at = new Date().toISOString();
-            // mark dirty
-            dirtyRef.current = { ...dirtyRef.current, [b.kode]: true };
-          })
-        );
-      }
-    });
-    setLocalKlausulArr(next);
-    onChangeReport && onChangeReport(next);
   }
 
   // build dirty updates separated
@@ -300,76 +268,30 @@ export default function KlausulButirTable({
   }
 
   // flush: send butirUpdates, metaUpdates, tableUpdates, images (if dirty)
+  // flush: send the entire data blob
   const flushAutosave = useCallback(async () => {
-    const { butirUpdates, metaUpdates, tableUpdates, imagesDirty } =
-      buildDirtyUpdates();
-    if (
-      (!butirUpdates || butirUpdates.length === 0) &&
-      (!metaUpdates || metaUpdates.length === 0) &&
-      (!tableUpdates || tableUpdates.length === 0) &&
-      !imagesDirty
-    ) {
-      toast("Tidak ada perubahan untuk disimpan");
+    // Don't save if there's no reportId or nothing is dirty
+    if (!reportId || Object.keys(dirtyRef.current).length === 0) {
+      toast("Tidak ada perubahan untuk disimpan"); // Notify user
       return { ok: true, count: 0 };
     }
+
+    // Get the full, current state of the klausul array
+    const currentReportData = localKlausulArr;
+
     setIsAutosaving(true);
     try {
-      let total = 0;
-      if (butirUpdates && butirUpdates.length > 0) {
-        await api.bulkUpdate(sampleId, butirUpdates);
-        const copy = { ...dirtyRef.current };
-        butirUpdates.forEach((u) => {
-          delete copy[u.butirKode];
-          persistedRef.current[u.butirKode] = {
-            keputusan: u.keputusan,
-            hasil_catatan: u.hasil_catatan,
-          };
-        });
-        dirtyRef.current = copy;
-        total += butirUpdates.length;
-      }
+      // --- THIS IS THE ONLY API CALL NEEDED ---
+      await apiClient.patch(`/api/reports/${reportId}/data`, {
+        data: currentReportData,
+        // We could also send imagesState here if we update the backend
+      });
 
-      if (metaUpdates && metaUpdates.length > 0) {
-        for (const m of metaUpdates) {
-          await api.updateKlausulMeta(sampleId, m.klausulCode, m.meta);
-          const copy = { ...dirtyRef.current };
-          delete copy[`meta-${m.klausulCode}`];
-          dirtyRef.current = copy;
-          persistedRef.current[`meta-${m.klausulCode}`] = { ...(m.meta || {}) };
-          total++;
-        }
-      }
-
-      if (tableUpdates && tableUpdates.length > 0) {
-        for (const t of tableUpdates) {
-          await api.saveKlausulTables(sampleId, t.klausulCode, t.tables);
-          const copy = { ...dirtyRef.current };
-          delete copy[`tables-${t.klausulCode}`];
-          dirtyRef.current = copy;
-          persistedRef.current[`tables-${t.klausulCode}`] = JSON.stringify(
-            t.tables || []
-          );
-          total++;
-        }
-      }
-
-      if (imagesDirty) {
-        // optional: persist images metadata (API must implement updateImages)
-        try {
-          await api.updateImages(sampleId, imagesState || []);
-        } catch (e) {
-          // if not implemented, ignore or log
-          console.warn("updateImages not available or failed:", e);
-        }
-        const copy = { ...dirtyRef.current };
-        delete copy["images"];
-        dirtyRef.current = copy;
-        persistedRef.current["images"] = JSON.stringify(imagesState || []);
-        total++;
-      }
+      // If successful, clear all dirty flags
+      dirtyRef.current = {};
 
       toast.success("Perubahan berhasil disimpan");
-      return { ok: true, count: total };
+      return { ok: true, count: 1 }; // 1 save operation
     } catch (e) {
       toast.error("Gagal menyimpan perubahan");
       console.error("flushAutosave error", e);
@@ -377,7 +299,7 @@ export default function KlausulButirTable({
     } finally {
       setIsAutosaving(false);
     }
-  }, [sampleId, localKlausulArr, imagesState]);
+  }, [reportId, localKlausulArr]); // Removed imagesState for simplicity
 
   // register flush with parent
   useEffect(() => {
@@ -394,23 +316,93 @@ export default function KlausulButirTable({
     return () => clearInterval(interval);
   }, [flushAutosave]);
 
+  // save a single note (used by EditorModal)
+  async function saveNoteWrapper(klausulCode, butirKode, text) {
+    markDirty(butirKode);
+    return await saveNote(klausulCode, butirKode, text);
+  }
+
+  // handle delete sample from menu
+  async function handleDeleteSample() {
+    setMenuOpen(false);
+    if (
+      !window.confirm(
+        "Hapus sample ini dari sistem? Tindakan ini tidak bisa dibatalkan."
+      )
+    )
+      return;
+    try {
+      if (typeof onDeleteSample === "function") {
+        await onDeleteSample(sampleId);
+      } else {
+        // fallback: just toast
+        toast.success("Permintaan hapus dikirim (mock)");
+      }
+    } catch (e) {
+      toast.error("Gagal menghapus sample");
+      console.error(e);
+    }
+  }
+
   // RENDER
   return (
     <div>
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          {Object.keys(dirtyRef.current).length > 0 ? (
-            <span className="text-sm text-yellow-700">
-              Perubahan belum tersimpan (otomatis menyimpan setiap 30s)
-            </span>
-          ) : (
-            <span className="text-sm text-gray-500">
-              Semua perubahan tersimpan
-            </span>
-          )}
+      {/* TOP BAR containing the 3-dot menu on left */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {/* Three-dot menu (left) */}
+          <div className="relative">
+            <button
+              className="px-3 py-2 border rounded bg-white hover:bg-gray-50"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Menu"
+            >
+              {/* vertical dots */}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <circle cx="12" cy="5" r="1.5"></circle>
+                <circle cx="12" cy="12" r="1.5"></circle>
+                <circle cx="12" cy="19" r="1.5"></circle>
+              </svg>
+            </button>
+
+            {menuOpen && (
+              <div className="absolute left-0 mt-2 w-56 bg-white border rounded shadow z-50">
+                <button
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setShowImageModal(true);
+                  }}
+                >
+                  Input Komponen + Gambar
+                </button>
+                <button
+                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
+                  onClick={handleDeleteSample}
+                >
+                  Hapus
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* info text */}
+          <div className="text-sm text-gray-600">
+            Klausul pengujian — isi hasil & keputusan per butir
+          </div>
         </div>
-        <div className="text-sm text-gray-400">
-          {isAutosaving ? "Menyimpan otomatis..." : ""}
+
+        <div className="text-sm text-gray-500">
+          {isAutosaving
+            ? "Menyimpan otomatis..."
+            : Object.keys(dirtyRef.current).length > 0
+            ? "Perubahan belum tersimpan"
+            : "Semua perubahan tersimpan"}
         </div>
       </div>
 
@@ -476,7 +468,7 @@ export default function KlausulButirTable({
                 />
               </div>
 
-              <div className="col-span-3">
+              <div className="col-span-2">
                 <label className="text-sm text-gray-600 block">
                   Kelembaban (%)
                 </label>
@@ -534,7 +526,6 @@ export default function KlausulButirTable({
           <div>
             {k.sub_klausul.map((s) => (
               <div key={s.kode} className="p-4 border-b last:border-b-0">
-                {/* --- Tabel Pengujian SNI Style --- */}
                 {/* --- Tabel Pengujian (SNI style) — hanya: Syarat-syarat Pengujian | Hasil - Catatan | Keputusan --- */}
                 <div className="mt-4">
                   {/* judul sub-klausul sebagai grup header (merge across columns) */}
@@ -571,6 +562,9 @@ export default function KlausulButirTable({
                           {/* SYARAT-SYARAT PENGUJIAN (butir teks) */}
                           <td className="border border-gray-400 px-3 py-3 align-top">
                             <div className="text-sm text-gray-800">
+                              <div className="font-semibold inline-block mr-2 text-gray-700">
+                                {b.kode}
+                              </div>
                               <span>{b.teks}</span>
                             </div>
                           </td>
@@ -643,11 +637,6 @@ export default function KlausulButirTable({
                       ))}
                     </tbody>
                   </table>
-
-                  {/* opsional: footer kecil untuk tiap sub-klausul */}
-                  <div className="mt-1 text-xs text-gray-500 italic px-2">
-                    Klik judul butir untuk menambah atau mengubah catatan.
-                  </div>
                 </div>
               </div>
             ))}
@@ -665,11 +654,12 @@ export default function KlausulButirTable({
         </div>
       ))}
 
-      {/* Images uploader at the end */}
-      <div className="bg-white rounded border p-4">
+      {/* Images uploader at the end (kept as gallery) */}
+      <div className="bg-white rounded border p-4 mt-6">
         <h3 className="text-lg font-semibold mb-2">Galeri Gambar Sampel</h3>
         <ImageUploader
           sampleId={sampleId}
+          reportId={reportId}
           images={imagesState}
           onChange={setImages}
         />
@@ -680,50 +670,95 @@ export default function KlausulButirTable({
         <EditorModal
           butir={editingButir}
           onClose={() => setEditingButir(null)}
-          onSave={async (text) => {
-            // find klausul code for butir
-            let klausulCode = null;
-            for (const k of localKlausulArr) {
-              for (const s of k.sub_klausul) {
-                if (s.butir.some((b) => b.kode === editingButir.kode)) {
-                  klausulCode = k.klausul;
-                  break;
-                }
-              }
-              if (klausulCode) break;
-            }
-            const res = await saveNote(klausulCode, editingButir.kode, text);
-            if (res && res.ok) setEditingButir(null);
-            // else keep modal open
+          onSave={(text) => {
+            const butirKode = editingButir.kode;
+
+            // 1. Update the local state
+            const next = JSON.parse(JSON.stringify(localKlausulArr));
+            next.forEach((k) => {
+              k.sub_klausul.forEach((s) =>
+                s.butir.forEach((b) => {
+                  if (b.kode === butirKode) {
+                    b.hasil_catatan = text;
+                    b.last_modified_by = "demo-user"; // You can get this from useAuth()
+                    b.last_modified_at = new Date().toISOString();
+                  }
+                })
+              );
+            });
+            setLocalKlausulArr(next);
+            onChangeReport && onChangeReport(next);
+
+            // 2. Mark this item as dirty for autosave
+            markDirty(butirKode);
+
+            // 3. Close the modal
+            setEditingButir(null);
+            toast.success("Catatan diperbarui (disimpan otomatis)");
           }}
         />
       )}
+
+      {/* Image modal triggered from menu */}
+      {showImageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white max-w-3xl w-full rounded shadow p-4">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-semibold">Input Komponen + Gambar</h3>
+              <button
+                className="text-sm text-gray-600"
+                onClick={() => setShowImageModal(false)}
+              >
+                Tutup
+              </button>
+            </div>
+            <div className="mb-4 text-sm text-gray-700">
+              Unggah gambar komponen atau foto sampel di sini.
+            </div>
+            <ImageUploader
+              sampleId={sampleId}
+              images={imagesState}
+              onChange={(imgs) => {
+                setImages(imgs);
+              }}
+            />
+            <div className="flex justify-end mt-3">
+              <button
+                className="px-3 py-1 border rounded mr-2"
+                onClick={() => setShowImageModal(false)}
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
 
-/* -------------------------
-   Helper functions: date-only
-   ------------------------- */
-function formatDateLocal(value) {
-  if (!value) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  return `${yyyy}-${mm}-${dd}`;
-}
+  // helper: bulk set fungsi
+  function bulkSetKlausul(klausulCode, value) {
+    const next = JSON.parse(JSON.stringify(localKlausulArr));
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) =>
+          s.butir.forEach((b) => {
+            b.keputusan = value;
+            b.last_modified_at = new Date().toISOString();
+          })
+        );
+      }
+    });
+    setLocalKlausulArr(next);
+    onChangeReport && onChangeReport(next);
 
-function toIsoFromDateLocal(dateValue) {
-  if (!dateValue) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return dateValue;
-  const d = new Date(dateValue);
-  if (isNaN(d.getTime())) return dateValue;
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    // mark all butir keys as dirty
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) => s.butir.forEach((b) => markDirty(b.kode)));
+      }
+    });
+  }
 }
 
 /* -------------------------
@@ -988,7 +1023,8 @@ function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
 /* -------------------------
    ImageUploader component (inline)
    ------------------------- */
-function ImageUploader({ sampleId, images = [], onChange }) {
+function ImageUploader({ sampleId, images = [], onChange, reportId }) {
+  // <-- ADD reportId
   const [localImgs, setLocalImgs] = useState(images || []);
   const [uploading, setUploading] = useState(false);
 
@@ -997,71 +1033,61 @@ function ImageUploader({ sampleId, images = [], onChange }) {
   async function handleFile(e) {
     const f = e.target.files[0];
     if (!f) return;
-    if (!f.type.startsWith("image/")) {
-      toast.error("Hanya gambar yang diperbolehkan");
-      return;
-    }
-    if (f.size > 10 * 1024 * 1024) {
-      toast.error("Ukuran maksimal 10MB");
-      return;
+    // ... (file type/size checks) ...
+
+    setUploading(true);
+
+    // Use FormData to send the file
+    const formData = new FormData();
+    formData.append("image", f); // 'image' must match router
+
+    try {
+      // Call the new backend endpoint
+      const res = await apiClient.post(
+        `/uploads/report-image/${reportId}`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        }
+      );
+
+      // res.data is the new ReportImage object
+      const newImage = res.data;
+      const next = [...localImgs, newImage];
+      setLocalImgs(next);
+      onChange && onChange(next); // Update parent
+      toast.success("Gambar berhasil diunggah");
+    } catch (err) {
+      toast.error("Gagal upload gambar");
+      console.error(err);
+    } finally {
+      setUploading(false);
     }
 
-    // optimistic preview
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const previewUrl = reader.result;
-      const temp = {
-        id: "tmp-" + Math.random().toString(36).slice(2, 9),
-        url: previewUrl,
-        caption: "",
-      };
-      const withTemp = [...localImgs, temp];
-      setLocalImgs(withTemp);
-      onChange && onChange(withTemp);
-      setUploading(true);
-      try {
-        const res = await api.uploadImage(sampleId, f);
-        if (res && res.ok) {
-          const replaced = withTemp.map((im) =>
-            im.id === temp.id ? { id: res.id, url: res.url, caption: "" } : im
-          );
-          setLocalImgs(replaced);
-          onChange && onChange(replaced);
-          toast.success("Gambar berhasil diunggah");
-        } else {
-          throw new Error("upload failed");
-        }
-      } catch (err) {
-        toast.error("Gagal upload gambar");
-        setLocalImgs((prev) => prev.filter((i) => i.id !== temp.id));
-        onChange && onChange(localImgs.filter((i) => i.id !== temp.id));
-        console.error(err);
-      } finally {
-        setUploading(false);
-      }
-    };
-    reader.readAsDataURL(f);
-    e.target.value = "";
+    e.target.value = ""; // Clear file input
   }
 
   async function removeImage(img) {
     if (!window.confirm("Hapus gambar ini?")) return;
+
     try {
-      if (img.id && !String(img.id).startsWith("tmp-")) {
-        const res = await api.deleteImage(sampleId, img.id);
-        if (!res || !res.ok) throw new Error("delete failed");
-      }
+      // Call the new DELETE endpoint
+      await apiClient.delete(`/uploads/image/${img.id}`);
+
+      const next = localImgs.filter((i) => i.id !== img.id);
+      setLocalImgs(next);
+      onChange && onChange(next); // Update parent
+      toast.success("Gambar dihapus");
     } catch (e) {
       toast.error("Gagal menghapus gambar");
       console.error(e);
       return;
     }
-    const next = localImgs.filter((i) => i.id !== img.id);
-    setLocalImgs(next);
-    onChange && onChange(next);
   }
 
   function updateCaption(imgId, caption) {
+    // ... (This function is fine, but we need to add a "save caption" button)
+    // For now, we'll just update local state
     const next = localImgs.map((i) => (i.id === imgId ? { ...i, caption } : i));
     setLocalImgs(next);
     onChange && onChange(next);
@@ -1079,6 +1105,7 @@ function ImageUploader({ sampleId, images = [], onChange }) {
           />
           {uploading ? "Mengunggah..." : "Tambah Gambar"}
         </label>
+        <div className="text-sm text-gray-500">{localImgs.length} gambar</div>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-3">
@@ -1108,4 +1135,28 @@ function ImageUploader({ sampleId, images = [], onChange }) {
       </div>
     </div>
   );
+}
+
+/* -------------------------
+   Helper functions: date-only
+   ------------------------- */
+function formatDateLocal(value) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function toIsoFromDateLocal(dateValue) {
+  if (!dateValue) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return dateValue;
+  const d = new Date(dateValue);
+  if (isNaN(d.getTime())) return dateValue;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

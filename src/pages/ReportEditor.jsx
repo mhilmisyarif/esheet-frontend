@@ -1,11 +1,13 @@
 // src/pages/ReportEditor.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api from "../mocks/api";
+// import api from "../mocks/api";
 import SidebarClauses from "../components/SidebarClauses";
 import KlausulButirTable from "../components/KlausulButirTable";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
+import apiClient from "../api";
+import { useAuth } from "../context/AuthContext";
 
 /**
  * ReportEditor with polished "Simpan & Kembali" confirmation modal.
@@ -15,6 +17,7 @@ import { FaSpinner } from "react-icons/fa";
 
 export default function ReportEditor() {
   const { sampleId } = useParams();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,18 +35,42 @@ export default function ReportEditor() {
     if (!sampleId) {
       api.getOrders().then((list) => {
         const sample = list[0].samples[0];
-        navigate(`/reports/${sample.id}`, { replace: true });
+        navigate(`/reports/${sampleId}`, { replace: true });
       });
       return;
     }
-    api
-      .getReportBySampleId(sampleId)
-      .then((r) => {
+    // --- BEFORE (using mock) ---
+    // api
+    //   .getReportBySampleId(sampleId)
+    //   .then((r) => {
+    //     if (!mounted) return;
+    //     setReport(r);
+    //     setLoading(false);
+    //   })
+    // .catch(() => setLoading(false));
+
+    // --- AFTER (using real API) ---
+    apiClient
+      .get(`/reports/${sampleId}`) // <-- Call new route
+      .then((response) => {
         if (!mounted) return;
-        setReport(r);
+        setReport(response.data); // Set the report from the API
+        if (response.data.ReportImages) {
+          // Find the KlausulButirTable and set its images
+          // This is tricky. We need to pass images down.
+        }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        // A 404 is normal if the report hasn't been created
+        if (err.response && err.response.status === 404) {
+          // You'd ideally show a "Create Report" button here
+          console.log("No report exists for this sample yet.");
+        } else {
+          console.error("Error fetching report:", err);
+        }
+        setLoading(false);
+      });
     return () => (mounted = false);
   }, [sampleId, navigate]);
 
@@ -52,7 +79,7 @@ export default function ReportEditor() {
 
   function handleSelectClause(index) {
     setActiveIndex(index);
-    const klausulCode = report.klausul[index] && report.klausul[index].klausul;
+    const klausulCode = report.data[index] && report.data[index].klausul;
     if (klausulCode) {
       const el = document.getElementById(`clause-${klausulCode}`);
       if (el) {
@@ -88,6 +115,16 @@ export default function ReportEditor() {
       if (res && res.ok === false) {
         throw res.error || new Error("Gagal menyimpan");
       }
+
+      // Check for "success but no changes"
+      if (res && res.count === 0) {
+        // The child (KlausulButirTable) already showed the toast.
+        // Just close the modal and go back.
+        setConfirmOpen(false);
+        navigate("/");
+        return; // Stop here
+      }
+
       toast.success(`Perubahan berhasil disimpan.`);
       setConfirmOpen(false);
       // small delay to let user feel the success toast (optional)
@@ -101,7 +138,7 @@ export default function ReportEditor() {
   }
 
   // compute steps (for sidebar badges) — reused from earlier logic
-  const steps = report.klausul.map((k) => {
+  const steps = report.data.map((k) => {
     let total = 0,
       missing = 0,
       countL = 0,
@@ -132,7 +169,51 @@ export default function ReportEditor() {
     };
   });
 
-  const activeClause = report.klausul[activeIndex];
+  const activeClause = report.data[activeIndex];
+
+  const handleApprove = async () => {
+    if (!window.confirm("Are you sure you want to approve this report?"))
+      return;
+    try {
+      await apiClient.post(`/api/reports/${report.id}/approve`);
+      toast.success("Report Approved!");
+      // Update local state and navigate away
+      setReport((prev) => ({ ...prev, status: "APPROVED" }));
+      setTimeout(() => navigate("/"), 500);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to approve");
+    }
+  };
+
+  const handleReject = async () => {
+    const reason = window.prompt("Please provide a reason for rejection:");
+    if (!reason) {
+      toast.error("Rejection cancelled. A reason is required.");
+      return;
+    }
+    try {
+      await apiClient.post(`/api/reports/${report.id}/reject`, { reason });
+      toast.success("Report Rejected and sent back to technician.");
+      // Update local state and navigate away
+      setReport((prev) => ({
+        ...prev,
+        status: "DRAFT",
+        rejection_reason: reason,
+      }));
+      setTimeout(() => navigate("/"), 500);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to reject");
+    }
+  };
+
+  if (loading) return <div className="p-8">Loading...</div>;
+  if (!report) return <div className="p-8">Report not found</div>;
+
+  // --- CONDITIONALLY RENDER BUTTONS ---
+  const isEngineer = user?.role === "ENGINEER" || user?.role === "ADMIN";
+  const isSubmitted = report.status === "SUBMITTED";
+  const isTechnician = user?.role === "TECHNICIAN";
+  const isDraft = report.status === "DRAFT";
 
   return (
     <div className="flex gap-6 p-6">
@@ -161,7 +242,7 @@ export default function ReportEditor() {
             onChangeReport={(updatedKlausuls) => {
               setReport((prev) => {
                 const copy = JSON.parse(JSON.stringify(prev));
-                copy.klausul[activeIndex] = updatedKlausuls[0];
+                copy.data[activeIndex] = updatedKlausuls[0];
                 return copy;
               });
             }}
@@ -172,34 +253,58 @@ export default function ReportEditor() {
         {/* Footer controls */}
         <div className="mt-6 flex items-center justify-between">
           <div>
-            <button
-              onClick={confirmSaveAndBack}
-              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-250"
-            >
-              Simpan & Kembali
-            </button>
+            {/* Technician's "Save & Back" button */}
+            {isTechnician && isDraft && (
+              <button
+                onClick={confirmSaveAndBack}
+                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Simpan & Kembali
+              </button>
+            )}
+
+            {/* Engineer's "Approve/Reject" buttons */}
+            {isEngineer && isSubmitted && (
+              <div className="flex gap-2">
+                <button
+                  onClick={handleReject}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Reject
+                </button>
+                <button
+                  onClick={handleApprove}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                >
+                  Approve
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="text-sm text-gray-500">
-            Langkah {activeIndex + 1} dari {report.klausul.length}
+            Langkah {activeIndex + 1} dari {report.data.length}
           </div>
 
-          <div>
-            <button
-              onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
-              className="px-4 py-2 bg-gray-200 rounded mr-2"
-            >
-              Sebelumnya
-            </button>
-            <button
-              onClick={() =>
-                setActiveIndex((i) => Math.min(report.klausul.length - 1, i + 1))
-              }
-              className="px-4 py-2 bg-blue-600 text-white rounded"
-            >
-              Selanjutnya
-            </button>
-          </div>
+          {/* Navigation. Hide if not a draft. */}
+          {isDraft && (
+            <div>
+              <button
+                onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
+                className="px-4 py-2 bg-gray-200 rounded mr-2"
+              >
+                Sebelumnya
+              </button>
+              <button
+                onClick={() =>
+                  setActiveIndex((i) => Math.min(report.data.length - 1, i + 1))
+                }
+                className="px-4 py-2 bg-blue-600 text-white rounded"
+              >
+                Selanjutnya
+              </button>
+            </div>
+          )}
         </div>
       </main>
 
@@ -235,9 +340,9 @@ export default function ReportEditor() {
                   Simpan perubahan dan kembali?
                 </h3>
                 <p className="text-sm text-gray-600 mb-3">
-                  Semua perubahan lokal akan dikirim ke server sekarang. Pastikan
-                  koneksi internet stabil. Setelah simpan, Anda akan kembali ke
-                  halaman utama.
+                  Semua perubahan lokal akan dikirim ke server sekarang.
+                  Pastikan koneksi internet stabil. Setelah simpan, Anda akan
+                  kembali ke halaman utama.
                 </p>
 
                 {/* summary: number of unsaved butir (try to read from flushRef if possible) */}
@@ -247,18 +352,17 @@ export default function ReportEditor() {
                         but we can show a soft hint by counting differences in report (simple) */}
                     {/* we'll derive a rough count: count empty keputusan in activeClause */}
                     <strong>
-                      {
-                        activeClause.sub_klausul.reduce(
-                          (acc, s) =>
-                            acc +
-                            s.butir.filter((b) => !b.keputusan).length,
-                          0
-                        )
-                      }
+                      {activeClause.sub_klausul.reduce(
+                        (acc, s) =>
+                          acc + s.butir.filter((b) => !b.keputusan).length,
+                        0
+                      )}
                     </strong>{" "}
                     butir belum terisi
                   </div>
-                  <div className="text-xs text-gray-500">Klik "Ya, Simpan Sekarang" untuk menyimpan.</div>
+                  <div className="text-xs text-gray-500">
+                    Klik "Ya, Simpan Sekarang" untuk menyimpan.
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2">

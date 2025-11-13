@@ -1,26 +1,24 @@
-// import axios from 'axios';
+import axios from 'axios';
 
-// // Buat instance axios dengan URL dasar backend Anda
-// const apiClient = axios.create({
-//     baseURL: 'http://localhost:5000/api', // Pastikan backend Anda berjalan di port 5000
-//     headers: {
-//         'Content-Type': 'application/json',
-//     },
-// });
+const apiClient = axios.create({
+    baseURL: 'http://localhost:5000/api',
+    headers: {
+        'Content-Type': 'application/json',
+    },
+});
 
-// // Interceptor untuk menambahkan token otentikasi ke setiap permintaan
-// apiClient.interceptors.request.use(
-//     (config) => {
-//         const token = localStorage.getItem('token');
-//         if (token) {
-//             config.headers.Authorization = `Bearer ${token}`;
-//         }
-//         return config;
-//     },
-//     (error) => {
-//         return Promise.reject(error);
-//     }
-// );
+// THIS IS THE KEY: Interceptor to add the token
+apiClient.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('token'); // Get token from storage
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+    },
+    (error) => {
+        return Promise.reject(error);
+    }
+);
 
-// export default apiClient;
-
+export default apiClient;
