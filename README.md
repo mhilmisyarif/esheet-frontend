@@ -52,7 +52,7 @@ This is a frontend application and **will not run** without its corresponding ba
 1.  **Clone the repository:**
 
     ```bash
-    git clone [your-frontend-repo-url]
+    git clone https://github.com/mhilmisyarif/esheet-frontend.git
     cd esheet-frontend
     ```
 
