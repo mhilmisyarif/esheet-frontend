@@ -1,19 +1,12 @@
 // src/pages/ReportEditor.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-// import api from "../mocks/api";
 import SidebarClauses from "../components/SidebarClauses";
 import KlausulButirTable from "../components/KlausulButirTable";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import apiClient from "../api";
 import { useAuth } from "../context/AuthContext";
-
-/**
- * ReportEditor with polished "Simpan & Kembali" confirmation modal.
- * - Child registers flush function via onRegisterFlush
- * - Parent shows polished modal, calls flush, shows spinner/toast, then navigates back
- */
 
 export default function ReportEditor() {
   const { sampleId } = useParams();
@@ -22,6 +15,7 @@ export default function ReportEditor() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [images, setImages] = useState([]); // State to hold images
 
   // flush function provided by child
   const flushRef = useRef(null);
@@ -33,21 +27,10 @@ export default function ReportEditor() {
   useEffect(() => {
     let mounted = true;
     if (!sampleId) {
-      api.getOrders().then((list) => {
-        const sample = list[0].samples[0];
-        navigate(`/reports/${sampleId}`, { replace: true });
-      });
+      console.warn("No sampleId provided");
+      setLoading(false);
       return;
     }
-    // --- BEFORE (using mock) ---
-    // api
-    //   .getReportBySampleId(sampleId)
-    //   .then((r) => {
-    //     if (!mounted) return;
-    //     setReport(r);
-    //     setLoading(false);
-    //   })
-    // .catch(() => setLoading(false));
 
     // --- AFTER (using real API) ---
     apiClient
@@ -55,10 +38,6 @@ export default function ReportEditor() {
       .then((response) => {
         if (!mounted) return;
         setReport(response.data); // Set the report from the API
-        if (response.data.ReportImages) {
-          // Find the KlausulButirTable and set its images
-          // This is tricky. We need to pass images down.
-        }
         setLoading(false);
       })
       .catch((err) => {
@@ -79,6 +58,7 @@ export default function ReportEditor() {
 
   function handleSelectClause(index) {
     setActiveIndex(index);
+    // <--- FIXED: report.data instead of report.klausul
     const klausulCode = report.data[index] && report.data[index].klausul;
     if (klausulCode) {
       const el = document.getElementById(`clause-${klausulCode}`);
@@ -90,44 +70,36 @@ export default function ReportEditor() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // child registers flush function here
   function handleRegisterFlush(fn) {
     flushRef.current = fn;
   }
 
-  // open modal
   function confirmSaveAndBack() {
     setConfirmOpen(true);
   }
 
-  // actual save action (called from modal)
   async function doSaveAndBack() {
     if (!flushRef.current) {
-      // no flush function: still navigate back
       navigate("/");
       return;
     }
     setIsSaving(true);
     try {
       const res = await flushRef.current();
-      // flush function returns object { ok: true, count } or similar in our child
-      // show toast accordingly
+
       if (res && res.ok === false) {
         throw res.error || new Error("Gagal menyimpan");
       }
 
       // Check for "success but no changes"
       if (res && res.count === 0) {
-        // The child (KlausulButirTable) already showed the toast.
-        // Just close the modal and go back.
         setConfirmOpen(false);
         navigate("/");
-        return; // Stop here
+        return;
       }
 
       toast.success(`Perubahan berhasil disimpan.`);
       setConfirmOpen(false);
-      // small delay to let user feel the success toast (optional)
       setTimeout(() => navigate("/"), 400);
     } catch (e) {
       console.error("Save failed", e);
@@ -137,7 +109,7 @@ export default function ReportEditor() {
     }
   }
 
-  // compute steps (for sidebar badges) — reused from earlier logic
+  // <--- FIXED: report.data instead of report.klausul
   const steps = report.data.map((k) => {
     let total = 0,
       missing = 0,
@@ -147,7 +119,7 @@ export default function ReportEditor() {
     k.sub_klausul.forEach((s) =>
       s.butir.forEach((b) => {
         total++;
-        const filled = !!b.keputusan; // treat any decision as filled
+        const filled = !!b.keputusan;
         if (!filled) missing++;
         if (b.keputusan === "L") countL++;
         if (b.keputusan === "TB") countTB++;
@@ -169,15 +141,15 @@ export default function ReportEditor() {
     };
   });
 
+  // <--- FIXED: report.data instead of report.klausul
   const activeClause = report.data[activeIndex];
 
   const handleApprove = async () => {
     if (!window.confirm("Are you sure you want to approve this report?"))
       return;
     try {
-      await apiClient.post(`/api/reports/${report.id}/approve`);
+      await apiClient.post(`/reports/${report.id}/approve`);
       toast.success("Report Approved!");
-      // Update local state and navigate away
       setReport((prev) => ({ ...prev, status: "APPROVED" }));
       setTimeout(() => navigate("/"), 500);
     } catch (err) {
@@ -192,12 +164,11 @@ export default function ReportEditor() {
       return;
     }
     try {
-      await apiClient.post(`/api/reports/${report.id}/reject`, { reason });
+      await apiClient.post(`/reports/${report.id}/reject`, { reason });
       toast.success("Report Rejected and sent back to technician.");
-      // Update local state and navigate away
       setReport((prev) => ({
         ...prev,
-        status: "DRAFT",
+        status: "REJECTED",
         rejection_reason: reason,
       }));
       setTimeout(() => navigate("/"), 500);
@@ -206,14 +177,14 @@ export default function ReportEditor() {
     }
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!report) return <div className="p-8">Report not found</div>;
-
-  // --- CONDITIONALLY RENDER BUTTONS ---
   const isEngineer = user?.role === "ENGINEER" || user?.role === "ADMIN";
-  const isSubmitted = report.status === "SUBMITTED";
-  const isTechnician = user?.role === "TECHNICIAN";
+  const isTechnician = user?.role === "TECHNICIAN" || user?.role === "ADMIN"; // Admin can act as tech
+
   const isDraft = report.status === "DRAFT";
+  const isRejected = report.status === "REJECTED";
+  const isSubmitted = report.status === "SUBMITTED";
+  const isRevised = report.status === "REVISED";
+  const isApproved = report.status === "APPROVED";
 
   return (
     <div className="flex gap-6 p-6">
@@ -237,11 +208,19 @@ export default function ReportEditor() {
 
         <div className="bg-gray-50 p-4 rounded">
           <KlausulButirTable
-            report={{ ...report, klausul: [activeClause] }}
+            // <--- FIXED: report prop structure
+            report={{ klausul: [activeClause] }}
             fullReport={report}
+            // Pass User Info for Corrections
+            userRole={user?.role}
+            userName={user?.name}
+            // Pass Images state
+            images={images}
+            onChangeImages={setImages}
             onChangeReport={(updatedKlausuls) => {
               setReport((prev) => {
                 const copy = JSON.parse(JSON.stringify(prev));
+                // <--- FIXED: copy.data instead of copy.klausul
                 copy.data[activeIndex] = updatedKlausuls[0];
                 return copy;
               });
@@ -253,19 +232,58 @@ export default function ReportEditor() {
         {/* Footer controls */}
         <div className="mt-6 flex items-center justify-between">
           <div>
-            {/* Technician's "Save & Back" button */}
-            {isTechnician && isDraft && (
-              <button
-                onClick={confirmSaveAndBack}
-                className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              >
-                Simpan & Kembali
-              </button>
+            {/* TECHNICIAN CONTROLS */}
+            {isTechnician && !isApproved && (
+              <div className="flex gap-2">
+                <button
+                  onClick={confirmSaveAndBack}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+                >
+                  {isRejected ? "Simpan Perbaikan" : "Simpan & Kembali"}
+                </button>
+
+                <button
+                  onClick={async () => {
+                    if (
+                      !window.confirm(
+                        "Kirim laporan ini untuk review Engineer?"
+                      )
+                    )
+                      return;
+                    try {
+                      await apiClient.post(`/reports/${report.id}/submit`);
+                      toast.success("Laporan berhasil dikirim!");
+                      setReport((prev) => ({
+                        ...prev,
+                        status: isRejected ? "REVISED" : "SUBMITTED",
+                      }));
+                      navigate("/");
+                    } catch (e) {
+                      toast.error(
+                        "Gagal mengirim. Pastikan semua data terisi."
+                      );
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  {isRejected
+                    ? "Kirim Revisi"
+                    : isSubmitted || isRevised
+                    ? "Update Pengajuan"
+                    : "Submit ke Engineer"}
+                </button>
+              </div>
             )}
 
-            {/* Engineer's "Approve/Reject" buttons */}
-            {isEngineer && isSubmitted && (
+            {/* ENGINEER CONTROLS */}
+            {isEngineer && (isSubmitted || isRevised) && (
               <div className="flex gap-2">
+                <button
+                  onClick={confirmSaveAndBack}
+                  className="px-4 py-2 bg-white border border-blue-200 text-blue-600 rounded hover:bg-blue-50"
+                >
+                  Simpan Koreksi
+                </button>
                 <button
                   onClick={handleReject}
                   className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -276,39 +294,46 @@ export default function ReportEditor() {
                   onClick={handleApprove}
                   className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700"
                 >
-                  Approve
+                  Approve {isRevised ? "(Revisi)" : ""}
                 </button>
               </div>
+            )}
+
+            {/* READ ONLY INDICATOR */}
+            {isApproved && (
+              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded font-medium">
+                🔒 Laporan Disetujui (Locked)
+              </span>
             )}
           </div>
 
           <div className="text-sm text-gray-500">
+            {/* <--- FIXED: report.data.length */}
             Langkah {activeIndex + 1} dari {report.data.length}
           </div>
 
-          {/* Navigation. Hide if not a draft. */}
-          {isDraft && (
-            <div>
-              <button
-                onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
-                className="px-4 py-2 bg-gray-200 rounded mr-2"
-              >
-                Sebelumnya
-              </button>
-              <button
-                onClick={() =>
-                  setActiveIndex((i) => Math.min(report.data.length - 1, i + 1))
-                }
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Selanjutnya
-              </button>
-            </div>
-          )}
+          {/* Navigation */}
+          <div>
+            <button
+              onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
+              className="px-4 py-2 bg-gray-200 rounded mr-2"
+            >
+              Sebelumnya
+            </button>
+            <button
+              onClick={() =>
+                // <--- FIXED: report.data.length
+                setActiveIndex((i) => Math.min(report.data.length - 1, i + 1))
+              }
+              className="px-4 py-2 bg-blue-600 text-white rounded"
+            >
+              Selanjutnya
+            </button>
+          </div>
         </div>
       </main>
 
-      {/* Polished confirmation modal */}
+      {/* Confirmation Modal */}
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div
@@ -341,29 +366,7 @@ export default function ReportEditor() {
                 </h3>
                 <p className="text-sm text-gray-600 mb-3">
                   Semua perubahan lokal akan dikirim ke server sekarang.
-                  Pastikan koneksi internet stabil. Setelah simpan, Anda akan
-                  kembali ke halaman utama.
                 </p>
-
-                {/* summary: number of unsaved butir (try to read from flushRef if possible) */}
-                <div className="flex items-center gap-3 text-sm text-gray-700 mb-4">
-                  <div className="px-3 py-2 bg-gray-100 rounded">
-                    {/* estimate number: we cannot access child's dirtyRef directly here,
-                        but we can show a soft hint by counting differences in report (simple) */}
-                    {/* we'll derive a rough count: count empty keputusan in activeClause */}
-                    <strong>
-                      {activeClause.sub_klausul.reduce(
-                        (acc, s) =>
-                          acc + s.butir.filter((b) => !b.keputusan).length,
-                        0
-                      )}
-                    </strong>{" "}
-                    butir belum terisi
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Klik "Ya, Simpan Sekarang" untuk menyimpan.
-                  </div>
-                </div>
 
                 <div className="flex justify-end gap-2">
                   <button

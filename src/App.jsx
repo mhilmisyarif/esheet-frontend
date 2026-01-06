@@ -1,17 +1,18 @@
 // src/App.jsx
 import React from "react";
 import { Routes, Route, Link, useNavigate } from "react-router-dom";
-import { useAuth } from "./context/AuthContext"; // <-- IMPORT
+import { useAuth } from "./context/AuthContext";
 
 // Pages
 import TechnicianDashboard from "./pages/TechnicianDashboard";
 import ReportEditor from "./pages/ReportEditor";
 import CreateReport from "./pages/CreateReport";
 import OrderDetail from "./pages/OrderDetail";
-import LoginPage from "./pages/LoginPage"; // <-- IMPORT
-import ProtectedRoute from "./components/ProtectedRoute"; // <-- IMPORT
-import EngineerDashboard from "./pages/EngineerDashboard"; // <-- IMPORT
-import DashboardRedirect from "./pages/DashboardRedirect"; // <-- IMPORT
+import LoginPage from "./pages/LoginPage";
+import ProtectedRoute from "./components/ProtectedRoute";
+import EngineerDashboard from "./pages/EngineerDashboard";
+import DashboardRedirect from "./pages/DashboardRedirect";
+import ManageStandards from "./pages/ManageStandards";
 
 function Header() {
   const { user, logout } = useAuth();
@@ -61,12 +62,11 @@ export default function App() {
 
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
-            {/* --- THIS IS THE CHANGE --- */}
             <Route path="/" element={<DashboardRedirect />} />
-            {/* -------------------------- */}
             <Route path="/create-report" element={<CreateReport />} />
             <Route path="/orders/:orderId" element={<OrderDetail />} />
             <Route path="/reports/:sampleId" element={<ReportEditor />} />
+            <Route path="/manage-standards" element={<ManageStandards />} />
           </Route>
         </Routes>
       </main>

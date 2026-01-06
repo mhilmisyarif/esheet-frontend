@@ -77,10 +77,7 @@ export default function CreateReport() {
       };
 
       // Call our new "workflow" endpoint
-      const response = await apiClient.post(
-        "/api/workflow/create-report",
-        payload
-      );
+      const response = await apiClient.post("/workflow/create-report", payload);
 
       // The response will be the new Report object
       const newReport = response.data;

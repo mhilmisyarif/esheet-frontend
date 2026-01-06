@@ -42,6 +42,40 @@ export default function TechnicianDashboard() {
     return () => (mounted = false);
   }, []); // Run only on mount
 
+  // Function to handle secure file download
+  const handleDownload = async (reportId, fileName) => {
+    try {
+      // 1. Request the file as a "blob" (binary data)
+      const response = await apiClient.get(`/reports/${reportId}/download`, {
+        responseType: "blob", // Important: tells axios to handle binary data
+      });
+
+      // 2. Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+
+      // 3. Create a temporary link element and click it
+      const link = document.createElement("a");
+      link.href = url;
+
+      // Use the filename from the backend or a fallback
+      link.setAttribute("download", fileName || `Report-${reportId}.docx`);
+
+      document.body.appendChild(link);
+      link.click();
+
+      // 4. Cleanup
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download failed", error);
+      // Show a nice error message (e.g. if not approved yet)
+      // You might need to read the blob as text to see the JSON error message
+      alert(
+        "Gagal mengunduh laporan. Pastikan laporan sudah disetujui (Approved)."
+      );
+    }
+  };
+
   return (
     <div>
       <div className="mb-6">
@@ -77,16 +111,16 @@ export default function TechnicianDashboard() {
                 >
                   {w.status === "APPROVED" ? "Lihat" : "Buka Worksheet"}
                 </button>
+                {/* NEW CODE - USE THIS */}
                 {w.status === "APPROVED" && (
-                  <a
-                    href={`${apiClient.defaults.baseURL}/reports/${w.reportId}/download`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                    className="px-3 py-2 rounded bg-emerald-600 text-white text-sm"
+                  <button
+                    onClick={() =>
+                      handleDownload(w.reportId, `LHU-${w.title}.docx`)
+                    }
+                    className="px-3 py-2 rounded bg-emerald-600 text-white text-sm hover:bg-emerald-700"
                   >
                     Download
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

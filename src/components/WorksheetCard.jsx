@@ -1,52 +1,48 @@
 // src/components/WorksheetCard.jsx
 import React, { useState } from "react";
-import ImageUploader from "./ImageUploader"; // sesuaikan path jika berbeda
-import api from "../mocks/api";
+import ImageUploader from "./ImageUploader"; // <-- This now imports the CORRECT uploader
+// import api from "../mocks/api"; // <-- REMOVED
 import toast from "react-hot-toast";
 
 /**
  * WorksheetCard
  * Props:
- *  - report: object (sample/report)
- *  - onOpen: function(report)
- *  - onDelete: function(report)
- *  - onImagesSaved: function(reportId, images) optional
+ * - report: object (sample/report)
+ * - onOpen: function(report)
+ * - onDelete: function(report)
+ * - onImagesSaved: function(reportId, images) optional
  */
 export default function WorksheetCard({
   report,
   onOpen,
   onDelete,
-  onImagesSaved,
+  onImagesSaved, // This prop is likely no longer needed
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [uploaderOpen, setUploaderOpen] = useState(false);
   const [images, setImages] = useState(report.images || []);
+
+  // We need both sampleId and reportId
   const sampleId = report.sample_id || report.sampleId || report.id;
+  // Assumes your report object has the report ID.
+  // You may need to adjust this based on your data structure.
+  const reportId = report.reportId || report.id;
 
   async function handleSaveImages(updatedImages) {
-    // panggil api mock untuk save metadata images (caption, urutan)
-    try {
-      const res = await api.updateImages(sampleId, updatedImages);
-      if (res && res.ok) {
-        toast.success("Gambar disimpan");
-        setImages(updatedImages);
-        setUploaderOpen(false);
-        if (typeof onImagesSaved === "function")
-          onImagesSaved(sampleId, updatedImages);
-      } else {
-        throw new Error(res && res.error ? res.error : "save failed");
-      }
-    } catch (e) {
-      console.error("save images error", e);
-      toast.error("Gagal menyimpan gambar");
-    }
+    // This function used to call the mock API.
+    // The new `ImageUploader` component handles its own uploads.
+    // The main `KlausulButirTable` handles saving captions/order.
+    // This function is redundant. We will just close the modal.
+    setImages(updatedImages);
+    setUploaderOpen(false);
+    toast.success("Gambar diperbarui");
   }
 
   async function handleDeleteReport() {
     if (!window.confirm(`Hapus worksheet "${report.sample_name || sampleId}"?`))
       return;
     try {
-      // jika kamu punya API deleteReport, panggil di sini; otherwise gunakan callback parent
+      // This part is fine, it just calls the parent function
       if (typeof onDelete === "function") {
         await onDelete(report);
       }
@@ -156,14 +152,16 @@ export default function WorksheetCard({
                   onClick={() => handleSaveImages(images)}
                   className="px-3 py-1 bg-sky-600 text-white rounded"
                 >
-                  Simpan
+                  Simpan & Tutup
                 </button>
               </div>
             </div>
 
             <div>
+              {/* Pass the reportId to the now-correct uploader */}
               <ImageUploader
                 sampleId={sampleId}
+                reportId={reportId}
                 images={images}
                 onChange={(imgs) => setImages(imgs)}
               />

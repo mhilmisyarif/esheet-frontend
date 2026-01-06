@@ -1,7 +1,7 @@
 // src/pages/Dashboard.jsx
 import React, { useEffect, useState } from "react";
 import WorksheetCard from "../components/WorksheetCard";
-import api from "../mocks/api";
+import apiClient from "../api"; // <-- CORRECT: Use real API client
 import { Link } from "react-router-dom";
 
 export default function Dashboard() {
@@ -9,9 +9,18 @@ export default function Dashboard() {
 
   useEffect(() => {
     let mounted = true;
-    api.getOrders().then((data) => {
-      if (mounted) setOrders(data);
-    });
+    // Use the real apiClient and a real endpoint
+    apiClient
+      .get("/orders")
+      .then((response) => {
+        if (mounted) {
+          setOrders(response.data); // Assuming /orders returns an array
+        }
+      })
+      .catch((err) => {
+        console.error("Error fetching orders:", err);
+        // Handle error (e.g., show toast)
+      });
     return () => (mounted = false);
   }, []);
 

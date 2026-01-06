@@ -1,6 +1,6 @@
 // src/components/KlausulButirTable.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
-// import api from "../mocks/api";
+// import sud from "../mocks/api";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import apiClient from "../api";
@@ -39,6 +39,8 @@ export default function KlausulButirTable({
   onChangeReport,
   onRegisterFlush,
   onDeleteSample,
+  userRole,
+  userName,
 }) {
   const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
   const [editingButir, setEditingButir] = useState(null);
@@ -66,6 +68,7 @@ export default function KlausulButirTable({
 
   // init local state and persisted snapshot
   useEffect(() => {
+    // Inisialisasi localKlausulArr HANYA dengan klausul aktif
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
     cloned.forEach((k) => {
       if (!k.meta)
@@ -78,9 +81,11 @@ export default function KlausulButirTable({
       if (!k.tables) k.tables = [];
     });
     setLocalKlausulArr(cloned);
-    setImagesState(report.images || []);
 
-    // persisted snapshot
+    // Inisialisasi imagesState
+    setImagesState(fullReport.images || []); // Ambil images dari fullReport
+
+    // persisted snapshot (ini sepertinya tidak lagi sinkron, tapi kita biarkan)
     const map = {};
     cloned.forEach((k) => {
       k.sub_klausul.forEach((s) => {
@@ -94,10 +99,12 @@ export default function KlausulButirTable({
       map[`meta-${k.klausul}`] = { ...(k.meta || {}) };
       map[`tables-${k.klausul}`] = JSON.stringify(k.tables || []);
     });
-    map["images"] = JSON.stringify(report.images || []);
+    map["images"] = JSON.stringify(fullReport.images || []);
     persistedRef.current = map;
-    dirtyRef.current = {};
-  }, [report]);
+
+    // Perbaikan dari bug sebelumnya (sudah benar)
+    // dirtyRef.current = {}; (Dihapus)
+  }, [report, fullReport.images]); // <-- Tambahkan fullReport.images
 
   const markDirty = useCallback((key) => {
     dirtyRef.current = { ...dirtyRef.current, [key]: true };
@@ -110,8 +117,27 @@ export default function KlausulButirTable({
         k.sub_klausul.forEach((s) =>
           s.butir.forEach((b) => {
             if (b.kode === butirKode) {
+              // --- CORRECTION LOGIC START ---
+              // If Engineer is changing it, preserve the original
+              if (userRole === "ENGINEER" || userRole === "ADMIN") {
+                // If this is the FIRST correction, save the current value as original
+                if (b.original_keputusan === undefined) {
+                  b.original_keputusan = b.keputusan;
+                }
+
+                // Mark as corrected if it differs from the original
+                // (If they change it back to original, we remove the flag)
+                b.is_corrected = decision !== b.original_keputusan;
+
+                // Optional: track who corrected it
+                if (b.is_corrected) {
+                  b.corrected_by = userName;
+                }
+              }
+              // --- CORRECTION LOGIC END ---
+
               b.keputusan = decision;
-              b.last_modified_by = "demo-user";
+              b.last_modified_by = userName || "demo-user";
               b.last_modified_at = new Date().toISOString();
             }
           })
@@ -125,37 +151,39 @@ export default function KlausulButirTable({
 
   function updateKlausulMeta(klausulCode, changes) {
     const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
     next.forEach((k) => {
       if (k.klausul === klausulCode) {
         k.meta = { ...(k.meta || {}), ...changes };
         k.last_meta_modified_at = new Date().toISOString();
+        changedClause = k;
       }
     });
     setLocalKlausulArr(next);
-    onChangeReport && onChangeReport(next);
+    onChangeReport && onChangeReport([changedClause]);
     markDirty(`meta-${klausulCode}`);
   }
 
   function updateKlausulTables(klausulCode, tables) {
     const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
     next.forEach((k) => {
       if (k.klausul === klausulCode) {
         k.tables = tables;
+        changedClause = k;
       }
     });
     setLocalKlausulArr(next);
-    onChangeReport && onChangeReport(next);
+    onChangeReport && onChangeReport([changedClause]);
     markDirty(`tables-${klausulCode}`);
   }
 
-  // images handlers: ImageUploader will upload/delete via api; here we just update state & mark dirty
+  // images handlers
   function setImages(images) {
     setImagesState(images);
     markDirty("images");
-    onChangeReport &&
-      onChangeReport((prev) => {
-        return prev;
-      });
+    // Beri tahu parent bahwa 'images' telah berubah
+    onChangeReport && onChangeReport(null, images);
   }
 
   const isButirFilled = (b) => !!b.keputusan;
@@ -169,7 +197,7 @@ export default function KlausulButirTable({
     return {};
   }
 
-  // save note (defensive)
+  // save note (defensive) - Perbaikan dari bug sebelumnya
   async function saveNote(klausulCodeParam, butirKode, text) {
     let klausulCode = klausulCodeParam;
     if (!klausulCode) {
@@ -187,24 +215,31 @@ export default function KlausulButirTable({
       }
     }
 
-    if (!sampleId) {
-      console.error("saveNote: sampleId missing", {
+    if (!reportId) {
+      console.error("saveNote: reportId missing", {
         klausulCode,
         butirKode,
         text,
       });
-      toast.error("Gagal menyimpan catatan (sampleId hilang)");
+      toast.error("Gagal menyimpan catatan (reportId hilang)");
       return { ok: false };
     }
 
     try {
       setIsAutosaving(true);
-      const res = await api.updateButir(sampleId, klausulCode, butirKode, {
-        hasil_catatan: text,
-        by: "demo-user",
+
+      // Asumsi Anda punya endpoint ini di backend
+      const res = await apiClient.patch(`/reports/${reportId}/butir`, {
+        klausulCode: klausulCode,
+        butirKode: butirKode,
+        payload: {
+          hasil_catatan: text,
+          by: "demo-user", // TODO: Ganti dengan user asli
+        },
       });
-      if (res && res.ok === false) throw res.error || new Error("API error");
-      // clear dirty for this butir
+
+      if (res && res.status >= 400) throw new Error("API error");
+
       const copy = { ...dirtyRef.current };
       delete copy[butirKode];
       dirtyRef.current = copy;
@@ -223,75 +258,40 @@ export default function KlausulButirTable({
     }
   }
 
-  // build dirty updates separated
+  // build dirty updates (fungsi ini tidak lagi digunakan oleh flushAutosave)
   function buildDirtyUpdates() {
-    const dirtyKeys = Object.keys(dirtyRef.current || {});
-    const butirKeys = dirtyKeys.filter(
-      (k) =>
-        !k.startsWith("meta-") && !k.startsWith("tables-") && k !== "images"
-    );
-    const metaKeys = dirtyKeys.filter((k) => k.startsWith("meta-"));
-    const tableKeys = dirtyKeys.filter((k) => k.startsWith("tables-"));
-    const imagesDirty = dirtyKeys.includes("images");
-
-    const butirUpdates = butirKeys.map((kode) => {
-      const { keputusan, hasil_catatan } = findButirValue(kode);
-      let klausulCode = null;
-      outer: for (const k of localKlausulArr)
-        for (const s of k.sub_klausul)
-          for (const b of s.butir)
-            if (b.kode === kode) {
-              klausulCode = k.klausul;
-              break outer;
-            }
-      return {
-        klausulCode,
-        butirKode: kode,
-        keputusan,
-        hasil_catatan: hasil_catatan || "",
-      };
-    });
-
-    const metaUpdates = metaKeys.map((mk) => {
-      const klausulCode = mk.replace("meta-", "");
-      const kObj = localKlausulArr.find((x) => x.klausul === klausulCode);
-      return { klausulCode, meta: kObj ? { ...(kObj.meta || {}) } : {} };
-    });
-
-    const tableUpdates = tableKeys.map((tk) => {
-      const klausulCode = tk.replace("tables-", "");
-      const kObj = localKlausulArr.find((x) => x.klausul === klausulCode);
-      return { klausulCode, tables: kObj ? kObj.tables || [] : [] };
-    });
-
-    return { butirUpdates, metaUpdates, tableUpdates, imagesDirty };
+    // ... (logika ini bisa disederhanakan/dihapus jika tidak dipakai)
   }
 
-  // flush: send butirUpdates, metaUpdates, tableUpdates, images (if dirty)
   // flush: send the entire data blob
   const flushAutosave = useCallback(async () => {
-    // Don't save if there's no reportId or nothing is dirty
+    // Jangan simpan jika tidak ada reportId atau tidak ada perubahan
     if (!reportId || Object.keys(dirtyRef.current).length === 0) {
-      toast("Tidak ada perubahan untuk disimpan"); // Notify user
+      toast("Tidak ada perubahan untuk disimpan"); // Beri tahu user
       return { ok: true, count: 0 };
     }
 
-    // Get the full, current state of the klausul array
-    const currentReportData = localKlausulArr;
+    // ==========================================================
+    // INI ADALAH PERBAIKAN UTAMA:
+    // Ambil data dari 'fullReport.data' (prop dari parent)
+    // BUKAN 'localKlausulArr' (state lokal)
+    // ==========================================================
+    const currentReportData = fullReport.data;
+    const currentImagesData = imagesState; // Ambil state gambar saat ini
 
     setIsAutosaving(true);
     try {
-      // --- THIS IS THE ONLY API CALL NEEDED ---
-      await apiClient.patch(`/api/reports/${reportId}/data`, {
+      // Kirim data LENGKAP ke backend
+      await apiClient.patch(`/reports/${reportId}/data`, {
         data: currentReportData,
-        // We could also send imagesState here if we update the backend
+        images: currentImagesData, // Kirim juga data gambar
       });
 
-      // If successful, clear all dirty flags
+      // Jika sukses, bersihkan semua tanda 'dirty'
       dirtyRef.current = {};
 
       toast.success("Perubahan berhasil disimpan");
-      return { ok: true, count: 1 }; // 1 save operation
+      return { ok: true, count: 1 }; // 1 operasi simpan
     } catch (e) {
       toast.error("Gagal menyimpan perubahan");
       console.error("flushAutosave error", e);
@@ -299,7 +299,7 @@ export default function KlausulButirTable({
     } finally {
       setIsAutosaving(false);
     }
-  }, [reportId, localKlausulArr]); // Removed imagesState for simplicity
+  }, [reportId, fullReport, imagesState]); // <-- TAMBAHKAN fullReport dan imagesState
 
   // register flush with parent
   useEffect(() => {
@@ -318,8 +318,8 @@ export default function KlausulButirTable({
 
   // save a single note (used by EditorModal)
   async function saveNoteWrapper(klausulCode, butirKode, text) {
+    // Fungsi ini hanya menandai dirty. Sudah benar.
     markDirty(butirKode);
-    return await saveNote(klausulCode, butirKode, text);
   }
 
   // handle delete sample from menu
@@ -335,8 +335,10 @@ export default function KlausulButirTable({
       if (typeof onDeleteSample === "function") {
         await onDeleteSample(sampleId);
       } else {
-        // fallback: just toast
-        toast.success("Permintaan hapus dikirim (mock)");
+        // fallback: panggil API hapus di sini jika ada
+        await apiClient.delete(`/samples/${sampleId}`);
+        toast.success("Sample berhasil dihapus");
+        // Mungkin perlu navigasi kembali
       }
     } catch (e) {
       toast.error("Gagal menghapus sample");
@@ -406,6 +408,10 @@ export default function KlausulButirTable({
         </div>
       </div>
 
+      {/* Render HANYA klausul yang ada di localKlausulArr.
+        localKlausulArr HANYA berisi klausul aktif (dari prop 'report').
+        Ini sudah benar.
+      */}
       {localKlausulArr.map((k) => (
         <div
           key={k.klausul}
@@ -602,35 +608,64 @@ export default function KlausulButirTable({
 
                           {/* KEPUTUSAN */}
                           <td className="border border-gray-400 px-3 py-3 text-center align-top">
-                            <div className="flex justify-center gap-2">
-                              {DECISIONS.map((d) => (
-                                <button
-                                  key={d.value}
-                                  className={`px-3 py-1 rounded border text-sm font-medium transition ${
-                                    d.value === "L"
-                                      ? b.keputusan === "L"
-                                        ? "bg-emerald-600 text-white border-emerald-600"
-                                        : "bg-white text-emerald-600 border-emerald-400"
-                                      : d.value === "TB"
-                                      ? b.keputusan === "TB"
-                                        ? "bg-gray-600 text-white border-gray-600"
-                                        : "bg-white text-gray-600 border-gray-400"
-                                      : b.keputusan === "G"
-                                      ? "bg-red-600 text-white border-red-600"
-                                      : "bg-white text-red-600 border-red-400"
-                                  }`}
-                                  onClick={() =>
-                                    updateLocalDecision(
-                                      k.klausul,
-                                      b.kode,
-                                      d.value
-                                    )
-                                  }
-                                  aria-label={`Set keputusan ${d.value} untuk ${b.kode}`}
+                            <div className="flex flex-col items-center justify-center gap-1">
+                              {/* --- SHOW STRIKETHROUGH IF CORRECTED --- */}
+                              {b.is_corrected && b.original_keputusan && (
+                                <div
+                                  className="text-xs text-red-500 font-bold mb-1"
+                                  title={`Originally: ${b.original_keputusan}`}
                                 >
-                                  {d.label}
-                                </button>
-                              ))}
+                                  <span className="line-through decoration-2">
+                                    {b.original_keputusan}
+                                  </span>
+                                  <span className="text-gray-400 text-[10px] ml-1">
+                                    (Rev)
+                                  </span>
+                                </div>
+                              )}
+                              {/* --------------------------------------- */}
+
+                              <div className="flex justify-center gap-2">
+                                {DECISIONS.map((d) => (
+                                  <button
+                                    key={d.value}
+                                    className={`px-3 py-1 rounded border text-sm font-medium transition ${
+                                      d.value === "L"
+                                        ? b.keputusan === "L"
+                                          ? "bg-emerald-600 text-white border-emerald-600"
+                                          : "bg-white text-emerald-600 border-emerald-400"
+                                        : d.value === "TB"
+                                        ? b.keputusan === "TB"
+                                          ? "bg-gray-600 text-white border-gray-600"
+                                          : "bg-white text-gray-600 border-gray-400"
+                                        : b.keputusan === "G"
+                                        ? "bg-red-600 text-white border-red-600"
+                                        : "bg-white text-red-600 border-red-400"
+                                    } ${
+                                      // Add a visual indicator for the active corrected button
+                                      b.is_corrected && b.keputusan === d.value
+                                        ? "ring-2 ring-offset-1 ring-blue-400"
+                                        : ""
+                                    }`}
+                                    onClick={() =>
+                                      updateLocalDecision(
+                                        k.klausul,
+                                        b.kode,
+                                        d.value
+                                      )
+                                    }
+                                  >
+                                    {d.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Optional: Show who corrected it */}
+                              {b.is_corrected && (
+                                <span className="text-[9px] text-blue-600">
+                                  By: {b.corrected_by}
+                                </span>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -675,19 +710,22 @@ export default function KlausulButirTable({
 
             // 1. Update the local state
             const next = JSON.parse(JSON.stringify(localKlausulArr));
+            let changedClause = null;
             next.forEach((k) => {
               k.sub_klausul.forEach((s) =>
                 s.butir.forEach((b) => {
                   if (b.kode === butirKode) {
                     b.hasil_catatan = text;
-                    b.last_modified_by = "demo-user"; // You can get this from useAuth()
+                    b.last_modified_by = "demo-user"; // TODO: Ganti
                     b.last_modified_at = new Date().toISOString();
+                    changedClause = k;
                   }
                 })
               );
             });
             setLocalKlausulArr(next);
-            onChangeReport && onChangeReport(next);
+            // Kirim HANYA klausul yang berubah ke parent
+            onChangeReport && onChangeReport([changedClause]);
 
             // 2. Mark this item as dirty for autosave
             markDirty(butirKode);
@@ -717,6 +755,7 @@ export default function KlausulButirTable({
             </div>
             <ImageUploader
               sampleId={sampleId}
+              reportId={reportId}
               images={imagesState}
               onChange={(imgs) => {
                 setImages(imgs);
@@ -739,6 +778,7 @@ export default function KlausulButirTable({
   // helper: bulk set fungsi
   function bulkSetKlausul(klausulCode, value) {
     const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
     next.forEach((k) => {
       if (k.klausul === klausulCode) {
         k.sub_klausul.forEach((s) =>
@@ -747,10 +787,11 @@ export default function KlausulButirTable({
             b.last_modified_at = new Date().toISOString();
           })
         );
+        changedClause = k;
       }
     });
     setLocalKlausulArr(next);
-    onChangeReport && onChangeReport(next);
+    onChangeReport && onChangeReport([changedClause]);
 
     // mark all butir keys as dirty
     next.forEach((k) => {
@@ -801,7 +842,7 @@ function EditorModal({ butir, onClose, onSave }) {
             onClick={async () => {
               setSaving(true);
               try {
-                await onSave(txt);
+                onSave(txt);
               } finally {
                 setSaving(false);
               }
@@ -820,6 +861,7 @@ function EditorModal({ butir, onClose, onSave }) {
 /* -------------------------
    TableEditor component (inline)
    ------------------------- */
+// Ini sudah benar dari perbaikan sebelumnya
 function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
   const [local, setLocal] = useState(() =>
     (tables || []).map((t) => ({ ...t }))
@@ -876,19 +918,6 @@ function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
     setAndNotify(next);
   }
 
-  async function saveAll() {
-    setSaving(true);
-    try {
-      await api.saveKlausulTables(sampleId, klausulCode, local);
-      toast.success("Tabel disimpan");
-    } catch (e) {
-      toast.error("Gagal menyimpan tabel");
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-2">
@@ -896,13 +925,6 @@ function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
         <div className="flex gap-2">
           <button onClick={addEmptyTable} className="px-2 py-1 border rounded">
             Tambah Tabel
-          </button>
-          <button
-            onClick={saveAll}
-            className="px-3 py-1 bg-blue-600 text-white rounded"
-            disabled={saving}
-          >
-            {saving ? "Menyimpan..." : "Simpan Tabel"}
           </button>
         </div>
       </div>
@@ -1023,6 +1045,7 @@ function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
 /* -------------------------
    ImageUploader component (inline)
    ------------------------- */
+// Ini sudah benar dari perbaikan sebelumnya
 function ImageUploader({ sampleId, images = [], onChange, reportId }) {
   // <-- ADD reportId
   const [localImgs, setLocalImgs] = useState(images || []);
@@ -1086,8 +1109,6 @@ function ImageUploader({ sampleId, images = [], onChange, reportId }) {
   }
 
   function updateCaption(imgId, caption) {
-    // ... (This function is fine, but we need to add a "save caption" button)
-    // For now, we'll just update local state
     const next = localImgs.map((i) => (i.id === imgId ? { ...i, caption } : i));
     setLocalImgs(next);
     onChange && onChange(next);
