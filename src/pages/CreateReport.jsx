@@ -11,10 +11,14 @@ export default function CreateReport() {
 
   // Form state
   const [orderNo, setOrderNo] = useState("");
-  const [applicant, setApplicant] = useState("PT MEGA CAKRA NUSANTARA"); // Default
-  const [iwoNo, setIwoNo] = useState("");
+  const [applicant, setApplicant] = useState("");
+  const [applicantAddress, setApplicantAddress] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
+  const [factory, setFactory] = useState("");
+  const [factoryAddress, setFactoryAddress] = useState("");
+  const [countryOrigin, setCountryOfOrigin] = useState("");
+  const [iwoNo, setIwoNo] = useState("");
   const [selectedStandardId, setSelectedStandardId] = useState("");
   const [testingType, setTestingType] = useState("FULL");
   const [selectedClauses, setSelectedClauses] = useState([]);
@@ -51,7 +55,7 @@ export default function CreateReport() {
     setSelectedClauses((prev) =>
       prev.includes(clauseNumber)
         ? prev.filter((c) => c !== clauseNumber)
-        : [...prev, clauseNumber]
+        : [...prev, clauseNumber],
     );
   };
 
@@ -67,11 +71,16 @@ export default function CreateReport() {
       const payload = {
         order_no: orderNo,
         applicant: applicant,
-        iwo_no: iwoNo,
+        applicant_address: applicantAddress,
         testStandardId: parseInt(selectedStandardId, 10),
+        testingType: testingType,
+        factory: factory,
         brand: brand,
         model: model,
-        testingType: testingType,
+        factory_address: factoryAddress,
+        country_origin: countryOrigin,
+        iwo_no: iwoNo,
+
         selectedClauses: testingType === "VERIFICATION" ? selectedClauses : [],
         technicianId: 1, // Hard-coded for now. We'll fix this with auth.
       };
@@ -95,7 +104,7 @@ export default function CreateReport() {
   };
 
   const selectedStandard = availableStandards.find(
-    (s) => s.id === parseInt(selectedStandardId, 10)
+    (s) => s.id === parseInt(selectedStandardId, 10),
   );
 
   return (
@@ -186,7 +195,7 @@ export default function CreateReport() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Pemohon
+                Aplikan / Pemohon
               </label>
               <input
                 type="text"
@@ -199,13 +208,14 @@ export default function CreateReport() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                Nomor IWO (Opsional)
+                Alamat
               </label>
               <input
                 type="text"
-                value={iwoNo}
-                onChange={(e) => setIwoNo(e.target.value)}
+                value={applicantAddress}
+                onChange={(e) => setApplicantAddress(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+                required
               />
             </div>
 
@@ -232,6 +242,55 @@ export default function CreateReport() {
                 onChange={(e) => setModel(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
                 required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Pabrik
+              </label>
+              <input
+                type="text"
+                value={factory}
+                onChange={(e) => setFactory(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Alamat Pabrik (Opsional)
+              </label>
+              <input
+                type="text"
+                value={factoryAddress}
+                onChange={(e) => setFactoryAddress(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Negara Pembuat (Opsional)
+              </label>
+              <input
+                type="text"
+                value={countryOrigin}
+                onChange={(e) => setCountryOfOrigin(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Nomor IWO (Opsional)
+              </label>
+              <input
+                type="text"
+                value={iwoNo}
+                onChange={(e) => setIwoNo(e.target.value)}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
               />
             </div>
           </>
