@@ -12,6 +12,7 @@ import {
   FiUpload,
   FiClipboard,
   FiImage,
+  FiLock,
 } from "react-icons/fi";
 import apiClient from "../api";
 
@@ -85,7 +86,7 @@ function InfoRow({ label, value, mono, editing, onChange, placeholder }) {
   );
 }
 
-function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd, onRemove }) {
+function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd, onRemove, locked }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
 
@@ -135,10 +136,16 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
           <h2 className="text-lg font-semibold text-navy-800">{title}</h2>
           <p className="text-[13px] text-ink-400 mt-0.5">{sub}</p>
         </div>
-        <button className={btnGhostSm} onClick={pick} disabled={busy}>
-          {busy ? <FaSpinner className="animate-spin" /> : <FiUpload size={14} />}
-          {addLabel}
-        </button>
+        {!locked && (
+          <button className={btnGhostSm} onClick={pick} disabled={busy}>
+            {busy ? (
+              <FaSpinner className="animate-spin" />
+            ) : (
+              <FiUpload size={14} />
+            )}
+            {addLabel}
+          </button>
+        )}
       </div>
 
       <input
@@ -156,13 +163,15 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
             className="group relative rounded-xl overflow-hidden border border-line aspect-[4/3] bg-navy-50 bg-cover bg-center transition-transform hover:-translate-y-0.5 hover:shadow-card"
             style={{ backgroundImage: `url(${FILE_BASE}${img.url})` }}
           >
-            <button
-              onClick={() => handleDelete(img.id)}
-              title="Hapus"
-              className="absolute top-1.5 right-1.5 w-6 h-6 rounded-md bg-navy-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:!bg-bad-fg transition-opacity"
-            >
-              <FiTrash2 size={13} />
-            </button>
+            {!locked && (
+              <button
+                onClick={() => handleDelete(img.id)}
+                title="Hapus"
+                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-md bg-navy-900/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 hover:!bg-bad-fg transition-opacity"
+              >
+                <FiTrash2 size={13} />
+              </button>
+            )}
             <div className="absolute left-2 right-2 bottom-2 bg-navy-900/85 text-white rounded-md px-2 py-1 flex items-center justify-between gap-1.5 text-[11px]">
               <span className="truncate">{img.caption || title}</span>
               <span className="font-mono text-[10px] text-white/70 shrink-0">
@@ -171,15 +180,25 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
             </div>
           </div>
         ))}
-        <button
-          onClick={pick}
-          disabled={busy}
-          className="aspect-[4/3] border-2 border-dashed border-line rounded-xl flex flex-col items-center justify-center gap-1.5 text-ink-400 text-xs hover:border-navy-500 hover:bg-navy-50 hover:text-navy-800 transition-colors disabled:opacity-50"
-        >
-          <FiPlus size={20} />
-          <strong className="text-[13px] font-semibold">{addLabel}</strong>
-          <span>PNG / JPG · maks 5 MB</span>
-        </button>
+        {locked
+          ? images.length === 0 && (
+              <div className="col-span-full py-8 text-center text-sm text-ink-400">
+                Tidak ada gambar.
+              </div>
+            )
+          : (
+              <button
+                onClick={pick}
+                disabled={busy}
+                className="aspect-[4/3] border-2 border-dashed border-line rounded-xl flex flex-col items-center justify-center gap-1.5 text-ink-400 text-xs hover:border-navy-500 hover:bg-navy-50 hover:text-navy-800 transition-colors disabled:opacity-50"
+              >
+                <FiPlus size={20} />
+                <strong className="text-[13px] font-semibold">
+                  {addLabel}
+                </strong>
+                <span>PNG / JPG · maks 5 MB</span>
+              </button>
+            )}
       </div>
     </section>
   );
@@ -340,6 +359,7 @@ export default function DatasheetDetail() {
   const order = sample.order || {};
   const report = sample.Report || null;
   const reportId = report?.id || null;
+  const isApproved = report?.status === "APPROVED";
   const td = (cls = "") =>
     `px-4 py-3.5 border-b border-line-soft text-sm ${cls}`;
 
@@ -413,6 +433,10 @@ export default function DatasheetDetail() {
                 Simpan
               </button>
             </div>
+          ) : isApproved ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-400">
+              <FiLock size={13} /> Terkunci — sudah disetujui
+            </span>
           ) : (
             <button className={btnGhostSm} onClick={startEditInfo}>
               <FiEdit3 size={14} /> Edit
@@ -486,12 +510,14 @@ export default function DatasheetDetail() {
               {components.length} komponen tercatat untuk sampel ini
             </p>
           </div>
-          <button
-            className={btnGhostSm}
-            onClick={() => setAddOpen((o) => !o)}
-          >
-            <FiPlus size={14} /> {addOpen ? "Tutup form" : "Tambah Komponen"}
-          </button>
+          {!isApproved && (
+            <button
+              className={btnGhostSm}
+              onClick={() => setAddOpen((o) => !o)}
+            >
+              <FiPlus size={14} /> {addOpen ? "Tutup form" : "Tambah Komponen"}
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -614,8 +640,9 @@ export default function DatasheetDetail() {
                         Belum ada komponen
                       </div>
                       <div className="text-sm text-ink-400">
-                        Klik "Tambah Komponen" untuk mencatat komponen yang
-                        diuji
+                        {isApproved
+                          ? "Tidak ada komponen tercatat untuk datasheet ini."
+                          : 'Klik "Tambah Komponen" untuk mencatat komponen yang diuji'}
                       </div>
                     </div>
                   </td>
@@ -651,13 +678,15 @@ export default function DatasheetDetail() {
                       )}
                     </td>
                     <td className={td("text-right")}>
-                      <button
-                        onClick={() => removeComponent(k.id)}
-                        title="Hapus komponen"
-                        className="inline-flex w-8 h-8 rounded-lg items-center justify-center text-ink-400 hover:bg-bad-bg hover:text-bad-fg transition-colors"
-                      >
-                        <FiTrash2 size={15} />
-                      </button>
+                      {!isApproved && (
+                        <button
+                          onClick={() => removeComponent(k.id)}
+                          title="Hapus komponen"
+                          className="inline-flex w-8 h-8 rounded-lg items-center justify-center text-ink-400 hover:bg-bad-bg hover:text-bad-fg transition-colors"
+                        >
+                          <FiTrash2 size={15} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -677,6 +706,7 @@ export default function DatasheetDetail() {
         images={componentImages}
         onAdd={(img) => setImages((p) => [img, ...p])}
         onRemove={(id) => setImages((p) => p.filter((x) => x.id !== id))}
+        locked={isApproved}
       />
 
       {/* Galeri Gambar Sampel */}
@@ -689,6 +719,7 @@ export default function DatasheetDetail() {
         images={sampleImages}
         onAdd={(img) => setImages((p) => [img, ...p])}
         onRemove={(id) => setImages((p) => p.filter((x) => x.id !== id))}
+        locked={isApproved}
       />
     </div>
   );

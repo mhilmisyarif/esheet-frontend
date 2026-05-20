@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+// API base URL — set VITE_API_URL at build time for deployments
+// (e.g. https://api.your-domain.com/api). Falls back to localhost for dev.
 const apiClient = axios.create({
-    baseURL: 'http://localhost:5000/api',
+    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
     headers: {
         'Content-Type': 'application/json',
     },

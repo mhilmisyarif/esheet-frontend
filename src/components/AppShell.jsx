@@ -5,6 +5,7 @@ import {
   FiGrid,
   FiUser,
   FiClipboard,
+  FiBookOpen,
   FiBell,
   FiChevronDown,
   FiLogOut,
@@ -16,10 +17,16 @@ import { useAuth } from "../context/AuthContext";
 import logoUrl from "../assets/logo.png";
 import avatarUrl from "../assets/avatar.png";
 
-const NAV = [
+const TECH_NAV = [
   { key: "dashboard", label: "Dashboard", Icon: FiGrid, path: "/technician-dashboard" },
   { key: "profile", label: "Profile", Icon: FiUser, path: null },
   { key: "registration", label: "Registration", Icon: FiClipboard, path: "/create-report" },
+];
+
+const ENGINEER_NAV = [
+  { key: "dashboard", label: "Dashboard", Icon: FiGrid, path: "/engineer-dashboard" },
+  { key: "standards", label: "Manage Standards", Icon: FiBookOpen, path: "/manage-standards" },
+  { key: "profile", label: "Profile", Icon: FiUser, path: null },
 ];
 
 function titleCase(s) {
@@ -27,7 +34,7 @@ function titleCase(s) {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
-function Sidebar({ navOpen, onClose }) {
+function Sidebar({ navOpen, onClose, nav }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -68,7 +75,7 @@ function Sidebar({ navOpen, onClose }) {
       </div>
 
       <nav className="flex-1 flex flex-col gap-0.5 px-4 py-4">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active =
             item.path &&
             (pathname === item.path ||
@@ -284,8 +291,14 @@ function LogoutConfirm({ onCancel, onConfirm }) {
 export default function AppShell({ children, crumbs = ["Technician", "Dashboard"] }) {
   const [navOpen, setNavOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const isEngineerSide =
+    user?.role === "ENGINEER" ||
+    user?.role === "ADMIN" ||
+    user?.role === "DRAFTER";
+  const nav = isEngineerSide ? ENGINEER_NAV : TECH_NAV;
 
   useEffect(() => {
     document.body.style.overflow = navOpen ? "hidden" : "";
@@ -303,7 +316,7 @@ export default function AppShell({ children, crumbs = ["Technician", "Dashboard"
 
   return (
     <div className="min-h-screen bg-canvas grid nav:grid-cols-[264px_1fr]">
-      <Sidebar navOpen={navOpen} onClose={() => setNavOpen(false)} />
+      <Sidebar nav={nav} navOpen={navOpen} onClose={() => setNavOpen(false)} />
 
       {navOpen && (
         <div

@@ -7,7 +7,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
-import { FiMoreHorizontal, FiTrash2, FiRotateCcw, FiCheck } from "react-icons/fi";
+import {
+  FiMoreHorizontal,
+  FiTrash2,
+  FiRotateCcw,
+  FiCheck,
+  FiLock,
+} from "react-icons/fi";
 import apiClient from "../api";
 import TableInstanceEditor from "./TableInstanceEditor";
 
@@ -20,7 +26,7 @@ const SEG_ACTIVE = {
 };
 
 // Segmented L / TB / G control
-function Seg({ value, onChange, small }) {
+function Seg({ value, onChange, small, disabled }) {
   return (
     <div className="inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5">
       {SEG_OPTS.map((o) => {
@@ -29,6 +35,7 @@ function Seg({ value, onChange, small }) {
           <button
             key={o}
             type="button"
+            disabled={disabled}
             title={SEG_TITLE[o]}
             onClick={() => onChange(o)}
             className={`inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
@@ -38,7 +45,9 @@ function Seg({ value, onChange, small }) {
             } ${
               active
                 ? SEG_ACTIVE[o]
-                : "text-ink-500 hover:bg-navy-50 hover:text-navy-800"
+                : disabled
+                  ? "text-ink-300 cursor-not-allowed"
+                  : "text-ink-500 hover:bg-navy-50 hover:text-navy-800"
             }`}
           >
             {o}
@@ -91,6 +100,7 @@ export default function KlausulButirTable({
     (fullReport && fullReport.id) || (report && report.id) || null;
 
   const reportStatus = fullReport?.status || report?.status || "DRAFT";
+  const locked = reportStatus === "APPROVED";
 
   useEffect(() => {
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
@@ -342,6 +352,13 @@ export default function KlausulButirTable({
   const thCls =
     "bg-[#fbfcfe] text-left text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] px-4 py-2.5 border-b border-line";
 
+  const condCls = locked
+    ? "w-full px-3 py-2 border border-line rounded-lg text-sm text-ink-700 bg-navy-50 outline-none cursor-not-allowed"
+    : condInput;
+  const hasilCls = locked
+    ? "w-full border border-line rounded-lg px-2.5 py-2 text-[13px] text-ink-700 bg-navy-50 resize-none min-h-[38px] max-h-[120px] outline-none cursor-not-allowed"
+    : "w-full border border-line rounded-lg px-2.5 py-2 text-[13px] text-navy-800 bg-white resize-y min-h-[38px] max-h-[120px] outline-none transition-colors focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/10 placeholder:text-ink-400";
+
   return (
     <div className="flex flex-col gap-4">
       {localKlausulArr.map((k) => (
@@ -353,54 +370,66 @@ export default function KlausulButirTable({
           >
             <div className="flex flex-col gap-3 nav:flex-row nav:items-center nav:justify-between px-4 nav:px-5 py-3.5 border-b border-line-soft">
               <div className="flex items-center gap-3">
-                <div className="relative" ref={menuRef}>
-                  <button
-                    onClick={() => setMenuOpen((o) => !o)}
-                    aria-label="Menu klausul"
-                    className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-ink-400 hover:bg-navy-50 hover:text-navy-800 transition-colors ${
-                      menuOpen ? "bg-navy-50 text-navy-800" : ""
-                    }`}
-                  >
-                    <FiMoreHorizontal size={18} />
-                  </button>
-                  {menuOpen && (
-                    <div className="absolute left-0 top-10 min-w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5 z-20">
-                      <button
-                        onClick={() => resetClause(k.klausul)}
-                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
-                      >
-                        <FiRotateCcw size={14} /> Reset klausul
-                      </button>
-                      <button
-                        onClick={handleDeleteSample}
-                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
-                      >
-                        <FiTrash2 size={14} /> Hapus sample
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {!locked && (
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      onClick={() => setMenuOpen((o) => !o)}
+                      aria-label="Menu klausul"
+                      className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-ink-400 hover:bg-navy-50 hover:text-navy-800 transition-colors ${
+                        menuOpen ? "bg-navy-50 text-navy-800" : ""
+                      }`}
+                    >
+                      <FiMoreHorizontal size={18} />
+                    </button>
+                    {menuOpen && (
+                      <div className="absolute left-0 top-10 min-w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5 z-20">
+                        <button
+                          onClick={() => resetClause(k.klausul)}
+                          className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+                        >
+                          <FiRotateCcw size={14} /> Reset klausul
+                        </button>
+                        <button
+                          onClick={handleDeleteSample}
+                          className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
+                        >
+                          <FiTrash2 size={14} /> Hapus sample
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <span className="text-[13px] text-ink-500">
-                  Klausul pengujian — isi kondisi &amp; keputusan per butir
+                  {locked
+                    ? "Klausul ini sudah disetujui — tampilan hanya-baca"
+                    : "Klausul pengujian — isi kondisi & keputusan per butir"}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
-                  {isAutosaving ? (
-                    <FaSpinner className="animate-spin" size={12} />
-                  ) : (
-                    <span className="w-1.5 h-1.5 rounded-full bg-ok-fg/60" />
-                  )}
-                  {autosaveText}
-                </span>
-                <span className="flex items-center gap-2 text-xs text-ink-400">
-                  <span>Set semua</span>
-                  <Seg
-                    value={null}
-                    onChange={(v) => bulkSetKlausul(k.klausul, v)}
-                    small
-                  />
-                </span>
+                {locked ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-400">
+                    <FiLock size={13} /> Terkunci
+                  </span>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
+                      {isAutosaving ? (
+                        <FaSpinner className="animate-spin" size={12} />
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full bg-ok-fg/60" />
+                      )}
+                      {autosaveText}
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-ink-400">
+                      <span>Set semua</span>
+                      <Seg
+                        value={null}
+                        onChange={(v) => bulkSetKlausul(k.klausul, v)}
+                        small
+                      />
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -411,7 +440,8 @@ export default function KlausulButirTable({
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, { tester_name: e.target.value })
                   }
-                  className={condInput}
+                  readOnly={locked}
+                  className={condCls}
                   placeholder="Nama teknisi"
                 />
               </CondField>
@@ -428,7 +458,8 @@ export default function KlausulButirTable({
                       test_datetime: toIsoFromDateLocal(e.target.value),
                     })
                   }
-                  className={condInput}
+                  readOnly={locked}
+                  className={condCls}
                 />
               </CondField>
               <CondField label="Suhu (°C)">
@@ -442,7 +473,8 @@ export default function KlausulButirTable({
                         e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
-                  className={condInput}
+                  readOnly={locked}
+                  className={condCls}
                   placeholder="25.0"
                 />
               </CondField>
@@ -457,7 +489,8 @@ export default function KlausulButirTable({
                         e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
-                  className={condInput}
+                  readOnly={locked}
+                  className={condCls}
                   placeholder="60"
                 />
               </CondField>
@@ -492,14 +525,16 @@ export default function KlausulButirTable({
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-ink-500">
-                    <span>Set semua di {s.kode}</span>
-                    <Seg
-                      value={null}
-                      onChange={(v) => bulkSetSubclause(k.klausul, s.kode, v)}
-                      small
-                    />
-                  </div>
+                  {!locked && (
+                    <div className="flex items-center gap-2 text-xs text-ink-500">
+                      <span>Set semua di {s.kode}</span>
+                      <Seg
+                        value={null}
+                        onChange={(v) => bulkSetSubclause(k.klausul, s.kode, v)}
+                        small
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -529,6 +564,7 @@ export default function KlausulButirTable({
                           <td className="px-4 py-4 border-b border-line-soft align-top">
                             <textarea
                               rows={1}
+                              readOnly={locked}
                               value={b.hasil_catatan || ""}
                               onChange={(e) =>
                                 updateLocalCatatan(
@@ -537,8 +573,8 @@ export default function KlausulButirTable({
                                   e.target.value,
                                 )
                               }
-                              placeholder="Catatan hasil…"
-                              className="w-full border border-line rounded-lg px-2.5 py-2 text-[13px] text-navy-800 bg-white resize-y min-h-[38px] max-h-[120px] outline-none transition-colors focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/10 placeholder:text-ink-400"
+                              placeholder={locked ? "—" : "Catatan hasil…"}
+                              className={hasilCls}
                             />
                           </td>
                           <td className="px-4 py-4 border-b border-line-soft align-top">
@@ -553,6 +589,7 @@ export default function KlausulButirTable({
                               )}
                               <Seg
                                 value={b.keputusan}
+                                disabled={locked}
                                 onChange={(v) =>
                                   updateLocalDecision(k.klausul, b.kode, v)
                                 }
@@ -569,26 +606,22 @@ export default function KlausulButirTable({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Structured data tables for THIS sub-clause. Templates are
+                    saved per sub-clause code (e.g. "6.1"), so each editor is
+                    queried with s.kode. Renders nothing when the sub-clause
+                    has no table template (empty:hidden collapses the wrapper). */}
+                <div className="px-4 nav:px-5 pb-5 empty:hidden">
+                  <TableInstanceEditor
+                    reportId={reportId}
+                    subClauseCode={s.kode}
+                    reportStatus={reportStatus}
+                    userRole={userRole}
+                  />
+                </div>
               </section>
             );
           })}
-
-          {/* STRUCTURED DATA TABLES */}
-          <section className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden">
-            <div className="px-4 nav:px-6 py-4 border-b border-line-soft">
-              <h3 className="text-[15px] font-semibold text-navy-800">
-                Tabel Data Uji
-              </h3>
-            </div>
-            <div className="p-4 nav:p-5">
-              <TableInstanceEditor
-                reportId={reportId}
-                subClauseCode={k.klausul}
-                reportStatus={reportStatus}
-                userRole={userRole}
-              />
-            </div>
-          </section>
         </React.Fragment>
       ))}
     </div>

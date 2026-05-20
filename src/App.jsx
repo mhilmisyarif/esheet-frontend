@@ -88,7 +88,11 @@ export default function App() {
         />
         <Route
           path="/engineer-dashboard"
-          element={<LegacyLayout><EngineerDashboard /></LegacyLayout>}
+          element={
+            <AppShell crumbs={["Engineer", "Dashboard"]}>
+              <EngineerDashboard />
+            </AppShell>
+          }
         />
         <Route
           path="/create-report"
@@ -120,7 +124,11 @@ export default function App() {
         />
         <Route
           path="/manage-standards"
-          element={<LegacyLayout><ManageStandards /></LegacyLayout>}
+          element={
+            <AppShell crumbs={["Engineer", "Manage Standards"]}>
+              <ManageStandards />
+            </AppShell>
+          }
         />
       </Route>
     </Routes>

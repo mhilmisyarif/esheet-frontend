@@ -9,6 +9,8 @@ import {
   FiChevronRight,
   FiMoreHorizontal,
   FiFileText,
+  FiDownload,
+  FiTrash2,
 } from "react-icons/fi";
 import apiClient from "../api";
 
@@ -114,6 +116,7 @@ export default function TechnicianDashboard() {
   const [year, setYear] = useState("All");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [menu, setMenu] = useState(null); // row-action menu: { row, top, left }
 
   useEffect(() => {
     let mounted = true;
@@ -123,6 +126,7 @@ export default function TechnicianDashboard() {
         if (!mounted) return;
         const mapped = res.data.map((s) => ({
           id: s.id,
+          reportId: s.Report?.id || null,
           orderNo: s.order?.order_no || "—",
           client: s.order?.applicant || "—",
           sampleName: s.name || "—",
@@ -185,6 +189,61 @@ export default function TechnicianDashboard() {
     (safePage - 1) * PER_PAGE,
     safePage * PER_PAGE
   );
+
+  function openRowMenu(e, row) {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenu({ row, top: rect.bottom + 6, left: rect.right - 200 });
+  }
+
+  async function downloadDatasheet(row) {
+    if (!row.reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/reports/${row.reportId}/download/datasheet`,
+        { responseType: "blob" }
+      );
+      const url = window.URL.createObjectURL(
+        new Blob([res.data], { type: "application/pdf" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DATASHEET-${row.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      const password = res.headers["x-datasheet-password"];
+      toast.success(
+        password
+          ? `Datasheet diunduh. Password: ${password}`
+          : "Datasheet diunduh.",
+        { duration: password ? 10000 : 4000 }
+      );
+    } catch (err) {
+      console.error("Datasheet download failed:", err);
+      toast.error("Gagal mengunduh datasheet.");
+    }
+  }
+
+  async function deleteDatasheet(row) {
+    if (
+      !window.confirm(
+        `Hapus datasheet "${row.client}"? Semua data terkait akan ikut terhapus dan tidak dapat dikembalikan.`
+      )
+    )
+      return;
+    try {
+      await apiClient.delete(`/samples/${row.id}`);
+      setRows((rs) => rs.filter((x) => x.id !== row.id));
+      toast.success("Datasheet dihapus.");
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Gagal menghapus datasheet.");
+    }
+  }
 
   return (
     <div>
@@ -328,9 +387,13 @@ export default function TechnicianDashboard() {
                       <StatusPill status={r.status} />
                     </td>
                     <td className={`${CELL} text-right`}>
-                      <span className="inline-flex w-8 h-8 rounded-lg items-center justify-center text-ink-400 group-hover:bg-navy-100 group-hover:text-navy-800 transition-colors">
+                      <button
+                        onClick={(e) => openRowMenu(e, r)}
+                        aria-label="Aksi datasheet"
+                        className="inline-flex w-8 h-8 rounded-lg items-center justify-center text-ink-400 hover:bg-navy-100 hover:text-navy-800 group-hover:text-navy-800 transition-colors"
+                      >
                         <FiMoreHorizontal size={18} />
-                      </span>
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -377,6 +440,53 @@ export default function TechnicianDashboard() {
           </div>
         </div>
       </section>
+
+      {/* Row-action menu */}
+      {menu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+          />
+          <div
+            className="fixed z-50 w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5"
+            style={{ top: menu.top, left: menu.left }}
+          >
+            <button
+              onClick={() => {
+                const row = menu.row;
+                setMenu(null);
+                navigate(`/datasheet/${row.id}`);
+              }}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+            >
+              <FiFileText size={15} /> Datasheet Detail
+            </button>
+            {menu.row.status === "APPROVED" && (
+              <button
+                onClick={() => {
+                  const row = menu.row;
+                  setMenu(null);
+                  downloadDatasheet(row);
+                }}
+                className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+              >
+                <FiDownload size={15} /> Download Datasheet
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const row = menu.row;
+                setMenu(null);
+                deleteDatasheet(row);
+              }}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
+            >
+              <FiTrash2 size={15} /> Delete Datasheet
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -69,8 +69,10 @@ export default function ReportEditor() {
       return;
     }
 
+    // The route param here is a SAMPLE id — use the by-sample endpoint
+    // (the bare /reports/:reportId route looks up by report id).
     apiClient
-      .get(`/reports/${sampleId}`)
+      .get(`/reports/by-sample/${sampleId}`)
       .then((response) => {
         if (!mounted) return;
         setReport(response.data);
