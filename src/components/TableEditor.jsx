@@ -1,196 +1,407 @@
 // src/components/TableEditor.jsx
-import React, { useState, useEffect } from "react";
-// import api from "../mocks/api"; // <-- REMOVED
+//
+// Completely replaces the inline TableEditor in KlausulButirTable.jsx.
+// Tables are now stored in the ClauseTable DB table, not in report.data JSON.
+// Each save/add/delete calls the API directly — no dirty flag, no autosave needed.
+//
+// Props:
+//   reportId    {number}  — the Report id
+//   clauseCode  {string}  — e.g. "6.1", "6", "9.1"
+//   reportStatus {string} — "DRAFT" | "SUBMITTED" | "REVISED" | "APPROVED" etc.
+
+import React, { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
+import {
+  FaSpinner,
+  FaPlus,
+  FaTrash,
+  FaCheck,
+  FaPencilAlt,
+} from "react-icons/fa";
+import apiClient from "../api";
 
-// This is now a "controlled component". It manages its own UI
-// but does NOT save to the API. It passes all changes up
-// to the parent component via the `onChange` prop.
-export default function TableEditor({
-  sampleId,
-  klausulCode,
-  tables = [],
-  onChange,
-}) {
-  const [local, setLocal] = useState(() =>
-    (tables || []).map((t) => ({ ...t }))
-  );
-  const [editingIndex, setEditingIndex] = useState(null);
-  // const [saving, setSaving] = useState(false); // No longer needed
+export default function TableEditor({ reportId, clauseCode, reportStatus }) {
+  const [tables, setTables] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null); // tableId being edited
+  const [saving, setSaving] = useState(false);
 
-  // Sync with parent prop
+  const isLocked = reportStatus === "APPROVED";
+
+  // ── Fetch tables for this clause on mount / when clauseCode changes ──
+  const fetchTables = useCallback(async () => {
+    if (!reportId || !clauseCode) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(
+        `/reports/${reportId}/clause-tables?clauseCode=${encodeURIComponent(clauseCode)}`,
+      );
+      setTables(res.data || []);
+    } catch (e) {
+      console.error("Failed to fetch clause tables", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [reportId, clauseCode]);
+
   useEffect(() => {
-    setLocal((tables || []).map((t) => ({ ...t })));
-  }, [tables]);
+    fetchTables();
+  }, [fetchTables]);
 
-  function setAndNotify(next) {
-    setLocal(next);
-    onChange && onChange(next);
+  // ── Add a new empty table ────────────────────────────────────────────
+  async function addTable() {
+    if (isLocked) return;
+    setSaving(true);
+    try {
+      const res = await apiClient.post(`/reports/${reportId}/clause-tables`, {
+        clauseCode,
+        title: "",
+        headers: ["Kolom 1", "Kolom 2"],
+        rows: [["", ""]],
+        notes: "",
+      });
+      setTables((prev) => [...prev, res.data]);
+      setEditingId(res.data.id); // auto-open for editing
+      toast.success("Tabel baru ditambahkan");
+    } catch (e) {
+      toast.error("Gagal menambah tabel");
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function addEmptyTable() {
-    const t = {
-      id: "tbl-" + Math.random().toString(36).slice(2, 9),
-      title: "",
-      headers: ["Col 1", "Col 2"],
-      rows: [["", ""]],
-      notes: "",
-    };
-    const next = [...local, t];
-    setAndNotify(next);
-    setEditingIndex((prev) => next.length - 1);
+  // ── Save edits for a specific table ─────────────────────────────────
+  async function saveTable(table) {
+    if (isLocked) return;
+    setSaving(true);
+    try {
+      const res = await apiClient.put(`/clause-tables/${table.id}`, {
+        title: table.title,
+        headers: table.headers,
+        rows: table.rows,
+        notes: table.notes,
+      });
+      setTables((prev) => prev.map((t) => (t.id === table.id ? res.data : t)));
+      setEditingId(null);
+      toast.success("Tabel disimpan");
+    } catch (e) {
+      toast.error("Gagal menyimpan tabel");
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function removeTable(idx) {
-    const next = local.slice();
-    next.splice(idx, 1);
-    setAndNotify(next);
+  // ── Delete a table ───────────────────────────────────────────────────
+  async function deleteTable(tableId) {
+    if (isLocked) return;
+    if (!window.confirm("Hapus tabel ini?")) return;
+    try {
+      await apiClient.delete(`/clause-tables/${tableId}`);
+      setTables((prev) => prev.filter((t) => t.id !== tableId));
+      if (editingId === tableId) setEditingId(null);
+      toast.success("Tabel dihapus");
+    } catch (e) {
+      toast.error("Gagal menghapus tabel");
+      console.error(e);
+    }
   }
 
-  function updateCell(tblIdx, rowIdx, colIdx, value) {
-    const next = JSON.parse(JSON.stringify(local));
-    next[tblIdx].rows[rowIdx][colIdx] = value;
-    setAndNotify(next);
+  // ── Local mutations (before save) ───────────────────────────────────
+  function mutateTable(tableId, mutator) {
+    setTables((prev) =>
+      prev.map((t) =>
+        t.id === tableId ? mutator(JSON.parse(JSON.stringify(t))) : t,
+      ),
+    );
   }
 
-  function addRow(tblIdx) {
-    const next = JSON.parse(JSON.stringify(local));
-    const cols = next[tblIdx].headers.length;
-    next[tblIdx].rows.push(new Array(cols).fill(""));
-    setAndNotify(next);
+  function updateCell(tableId, rowIdx, colIdx, value) {
+    mutateTable(tableId, (t) => {
+      t.rows[rowIdx][colIdx] = value;
+      return t;
+    });
   }
 
-  function addColumn(tblIdx) {
-    const next = JSON.parse(JSON.stringify(local));
-    next[tblIdx].headers.push(`Col ${next[tblIdx].headers.length + 1}`);
-    next[tblIdx].rows.forEach((r) => r.push(""));
-    setAndNotify(next);
+  function updateHeader(tableId, colIdx, value) {
+    mutateTable(tableId, (t) => {
+      t.headers[colIdx] = value;
+      return t;
+    });
   }
 
-  // The saveAll function that called the mock API is REMOVED.
-  // async function saveAll() { ... }
+  function addRow(tableId) {
+    mutateTable(tableId, (t) => {
+      t.rows.push(new Array(t.headers.length).fill(""));
+      return t;
+    });
+  }
+
+  function removeRow(tableId, rowIdx) {
+    mutateTable(tableId, (t) => {
+      t.rows.splice(rowIdx, 1);
+      return t;
+    });
+  }
+
+  function addColumn(tableId) {
+    mutateTable(tableId, (t) => {
+      t.headers.push(`Kolom ${t.headers.length + 1}`);
+      t.rows.forEach((r) => r.push(""));
+      return t;
+    });
+  }
+
+  function removeColumn(tableId, colIdx) {
+    mutateTable(tableId, (t) => {
+      t.headers.splice(colIdx, 1);
+      t.rows.forEach((r) => r.splice(colIdx, 1));
+      return t;
+    });
+  }
+
+  function updateTitle(tableId, value) {
+    mutateTable(tableId, (t) => {
+      t.title = value;
+      return t;
+    });
+  }
+
+  function updateNotes(tableId, value) {
+    mutateTable(tableId, (t) => {
+      t.notes = value;
+      return t;
+    });
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="mt-4 text-sm text-gray-400 flex items-center gap-2">
+        <FaSpinner className="animate-spin" />
+        Memuat tabel lampiran...
+      </div>
+    );
+  }
 
   return (
     <div className="mt-4">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-semibold">Tabel Lampiran</h4>
-        <div className="flex gap-2">
-          <button onClick={addEmptyTable} className="px-2 py-1 border rounded">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-gray-800">
+          Lampiran Tabel
+          {tables.length > 0 && (
+            <span className="ml-2 text-xs font-normal text-gray-400">
+              ({tables.length} tabel)
+            </span>
+          )}
+        </h4>
+        {!isLocked && (
+          <button
+            onClick={addTable}
+            disabled={saving}
+            className="flex items-center gap-1 px-3 py-1.5 border rounded text-sm bg-white hover:bg-gray-50 disabled:opacity-50"
+          >
+            {saving ? (
+              <FaSpinner className="animate-spin" size={12} />
+            ) : (
+              <FaPlus size={12} />
+            )}
             Tambah Tabel
           </button>
-          {/* Save button is removed. Parent handles saving. */}
-        </div>
+        )}
       </div>
 
-      <div className="space-y-4">
-        {local.map((t, ti) => (
-          <div key={t.id} className="border rounded p-3 bg-white">
-            <div className="flex justify-between items-start">
-              <input
-                value={t.title}
-                onChange={(e) => {
-                  const n = JSON.parse(JSON.stringify(local));
-                  n[ti].title = e.target.value;
-                  setAndNotify(n);
-                }}
-                placeholder="Judul Tabel"
-                className="w-2/3 border px-2 py-1 rounded"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    setEditingIndex(editingIndex === ti ? null : ti)
-                  }
-                  className="px-2 py-1 border rounded"
-                >
-                  {editingIndex === ti ? "Selesai" : "Edit"}
-                </button>
-                <button
-                  onClick={() => removeTable(ti)}
-                  className="px-2 py-1 border rounded text-red-600"
-                >
-                  Hapus
-                </button>
-              </div>
-            </div>
+      {tables.length === 0 && (
+        <p className="text-sm text-gray-400 italic">
+          {isLocked
+            ? "Tidak ada tabel lampiran untuk klausul ini."
+            : "Belum ada tabel. Klik 'Tambah Tabel' untuk menambahkan."}
+        </p>
+      )}
 
-            {/* render table */}
-            <div className="overflow-auto mt-3">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr>
-                    {t.headers.map((h, hi) => (
-                      <th key={hi} className="border px-2 py-1 text-left">
-                        {editingIndex === ti ? (
-                          <input
-                            value={h}
-                            onChange={(e) => {
-                              const n = JSON.parse(JSON.stringify(local));
-                              n[ti].headers[hi] = e.target.value;
-                              setAndNotify(n);
-                            }}
-                            className="px-1 py-0.5 border rounded"
-                          />
+      <div className="space-y-5">
+        {tables.map((t) => {
+          const isEditing = editingId === t.id;
+
+          return (
+            <div
+              key={t.id}
+              className="border rounded-lg bg-white overflow-hidden"
+            >
+              {/* Table header bar */}
+              <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
+                {isEditing ? (
+                  <input
+                    value={t.title}
+                    onChange={(e) => updateTitle(t.id, e.target.value)}
+                    placeholder="Judul tabel (misal: TABEL I: Pengujian Mampu Tukar E27)"
+                    className="flex-1 border rounded px-2 py-1 text-sm mr-2"
+                    autoFocus
+                  />
+                ) : (
+                  <span className="text-sm font-medium text-gray-700">
+                    {t.title || (
+                      <span className="italic text-gray-400">Tanpa judul</span>
+                    )}
+                  </span>
+                )}
+
+                {!isLocked && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isEditing ? (
+                      <button
+                        onClick={() => saveTable(t)}
+                        disabled={saving}
+                        className="flex items-center gap-1 px-2 py-1 bg-sky-600 text-white rounded text-xs"
+                      >
+                        {saving ? (
+                          <FaSpinner className="animate-spin" size={10} />
                         ) : (
-                          h
+                          <FaCheck size={10} />
                         )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {t.rows.map((r, ri) => (
-                    <tr key={ri}>
-                      {r.map((cell, ci) => (
-                        <td key={ci} className="border px-2 py-1">
-                          {editingIndex === ti ? (
-                            <input
-                              value={cell}
-                              onChange={(e) =>
-                                updateCell(ti, ri, ci, e.target.value)
-                              }
-                              className="w-full px-1 py-0.5 border rounded"
-                            />
-                          ) : (
-                            cell
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {editingIndex === ti && (
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => addRow(ti)}
-                  className="px-2 py-1 border rounded"
-                >
-                  Tambah Baris
-                </button>
-                <button
-                  onClick={() => addColumn(ti)}
-                  className="px-2 py-1 border rounded"
-                >
-                  Tambah Kolom
-                </button>
+                        Simpan
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setEditingId(t.id)}
+                        className="flex items-center gap-1 px-2 py-1 border rounded text-xs hover:bg-gray-100"
+                      >
+                        <FaPencilAlt size={10} />
+                        Edit
+                      </button>
+                    )}
+                    <button
+                      onClick={() => deleteTable(t.id)}
+                      className="flex items-center gap-1 px-2 py-1 border border-red-200 text-red-600 rounded text-xs hover:bg-red-50"
+                    >
+                      <FaTrash size={10} />
+                      Hapus
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
 
-            <textarea
-              value={t.notes || ""}
-              onChange={(e) => {
-                const n = JSON.parse(JSON.stringify(local));
-                n[ti].notes = e.target.value;
-                setAndNotify(n);
-              }}
-              placeholder="Catatan (opsional)"
-              className="w-full mt-2 border rounded p-2"
-            />
-          </div>
-        ))}
+              {/* Table body */}
+              <div className="overflow-x-auto p-2">
+                <table className="min-w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      {t.headers.map((h, hi) => (
+                        <th
+                          key={hi}
+                          className="border border-gray-300 px-2 py-1 bg-gray-100 text-center relative"
+                        >
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                value={h}
+                                onChange={(e) =>
+                                  updateHeader(t.id, hi, e.target.value)
+                                }
+                                className="w-full px-1 py-0.5 border rounded text-xs"
+                              />
+                              {t.headers.length > 1 && (
+                                <button
+                                  onClick={() => removeColumn(t.id, hi)}
+                                  className="text-red-400 hover:text-red-600 shrink-0"
+                                  title="Hapus kolom"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="font-medium">{h}</span>
+                          )}
+                        </th>
+                      ))}
+                      {/* Row delete column when editing */}
+                      {isEditing && (
+                        <th className="border border-gray-300 px-1 py-1 bg-gray-100 w-6" />
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(t.rows || []).map((row, ri) => (
+                      <tr key={ri}>
+                        {t.headers.map((_, ci) => (
+                          <td
+                            key={ci}
+                            className="border border-gray-300 px-2 py-1 text-center"
+                          >
+                            {isEditing ? (
+                              <input
+                                value={
+                                  Array.isArray(row) ? (row[ci] ?? "") : ""
+                                }
+                                onChange={(e) =>
+                                  updateCell(t.id, ri, ci, e.target.value)
+                                }
+                                className="w-full px-1 py-0.5 border rounded text-xs text-center"
+                              />
+                            ) : (
+                              <span>
+                                {Array.isArray(row) ? (row[ci] ?? "") : ""}
+                              </span>
+                            )}
+                          </td>
+                        ))}
+                        {isEditing && (
+                          <td className="border border-gray-300 px-1 py-1 text-center">
+                            {t.rows.length > 1 && (
+                              <button
+                                onClick={() => removeRow(t.id, ri)}
+                                className="text-red-400 hover:text-red-600 text-xs"
+                                title="Hapus baris"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Edit-mode controls */}
+              {isEditing && (
+                <div className="px-3 pb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => addRow(t.id)}
+                      className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                    >
+                      + Tambah Baris
+                    </button>
+                    <button
+                      onClick={() => addColumn(t.id)}
+                      className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                    >
+                      + Tambah Kolom
+                    </button>
+                  </div>
+                  <textarea
+                    value={t.notes || ""}
+                    onChange={(e) => updateNotes(t.id, e.target.value)}
+                    placeholder="Catatan tabel (opsional)"
+                    rows={2}
+                    className="w-full border rounded px-2 py-1 text-sm"
+                  />
+                </div>
+              )}
+
+              {/* Notes display when not editing */}
+              {!isEditing && t.notes && (
+                <div className="px-3 py-2 text-xs text-gray-500 italic border-t">
+                  {t.notes}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

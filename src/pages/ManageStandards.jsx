@@ -1,3 +1,9 @@
+// src/pages/ManageStandards.jsx
+// Changes from previous version:
+// - Added a third tab "TABEL LAMPIRAN" per standard
+// - When editing a standard, engineers can click the new tab to open TemplateBuilder
+// - TemplateBuilder receives the standardId and the flat list of sub-clauses
+
 import React, { useEffect, useState } from "react";
 import apiClient from "../api";
 import toast from "react-hot-toast";
@@ -13,38 +19,32 @@ import {
   FaFolderOpen,
   FaChevronDown,
   FaChevronRight,
+  FaTable,
 } from "react-icons/fa";
+import TemplateBuilder from "../components/TemplateBuilder";
 
 export default function ManageStandards() {
   const [labs, setLabs] = useState([]);
-  const [activeTab, setActiveTab] = useState("BUILDER"); // 'BUILDER' or 'JSON'
+  const [activeTab, setActiveTab] = useState("BUILDER");
   const [isLoading, setIsLoading] = useState(false);
-
-  // Edit Mode State
   const [editingId, setEditingId] = useState(null);
-
-  // Form State
   const [name, setName] = useState("");
   const [standardNumbers, setStandardNumbers] = useState([""]);
   const [labId, setLabId] = useState("");
   const [jsonFile, setJsonFile] = useState(null);
   const [clauses, setClauses] = useState([]);
-
-  // UI State for List
   const [expandedLabs, setExpandedLabs] = useState({});
 
   const addStandardNumber = () => setStandardNumbers([...standardNumbers, ""]);
-
   const updateStandardNumber = (index, value) => {
-    const newNumbers = [...standardNumbers];
-    newNumbers[index] = value;
-    setStandardNumbers(newNumbers);
+    const n = [...standardNumbers];
+    n[index] = value;
+    setStandardNumbers(n);
   };
-
   const removeStandardNumber = (index) => {
-    const newNumbers = [...standardNumbers];
-    newNumbers.splice(index, 1);
-    setStandardNumbers(newNumbers);
+    const n = [...standardNumbers];
+    n.splice(index, 1);
+    setStandardNumbers(n);
   };
 
   useEffect(() => {
@@ -55,43 +55,42 @@ export default function ManageStandards() {
     try {
       const res = await apiClient.get("/labs");
       setLabs(res.data);
-
-      // Default: Expand only labs that have standards
-      const initialExpanded = {};
+      const init = {};
       res.data.forEach((l) => {
-        if (l.TestStandards && l.TestStandards.length > 0) {
-          initialExpanded[l.id] = true;
-        }
+        if (l.TestStandards?.length > 0) init[l.id] = true;
       });
-      setExpandedLabs(initialExpanded);
+      setExpandedLabs(init);
     } catch (e) {
       console.error(e);
     }
   };
 
-  const toggleLab = (id) => {
+  const toggleLab = (id) =>
     setExpandedLabs((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
 
-  // --- ACTIONS ---
+  // Build flat sub-clause list from current clauses tree (used by TemplateBuilder)
+  function getSubClauses() {
+    const result = [];
+    clauses.forEach((k) => {
+      (k.sub_klausul || []).forEach((s) => {
+        result.push({ kode: s.kode, judul: s.judul || "" });
+      });
+    });
+    return result;
+  }
 
   const handleEdit = async (standard) => {
     setEditingId(standard.id);
     setName(standard.name);
     setLabId(standard.labId);
-    // Load existing numbers OR default to one empty field
     setStandardNumbers(
-      standard.standard_numbers && standard.standard_numbers.length > 0
-        ? standard.standard_numbers
-        : [""]
+      standard.standard_numbers?.length > 0 ? standard.standard_numbers : [""],
     );
-
     if (standard.template_data && Array.isArray(standard.template_data)) {
       setClauses(standard.template_data);
       setActiveTab("BUILDER");
     } else {
       setClauses([]);
-      toast("Standard data is empty or invalid format");
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -99,29 +98,31 @@ export default function ManageStandards() {
   const handleCancelEdit = () => {
     setEditingId(null);
     setName("");
-    setStandardNumber("");
     setLabId("");
     setClauses([]);
     setJsonFile(null);
+    setStandardNumbers([""]);
+    setActiveTab("BUILDER");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     let finalJson = null;
-
     if (activeTab === "JSON") {
       if (!jsonFile) return toast.error("Please upload a JSON file");
       try {
         finalJson = JSON.parse(jsonFile);
-      } catch (err) {
+      } catch {
         return toast.error("Invalid JSON Syntax");
       }
-    } else {
+    } else if (activeTab === "BUILDER") {
       if (clauses.length === 0)
         return toast.error("Please add at least one clause");
       finalJson = clauses;
+    } else {
+      // TABEL tab — save the standard as-is (clauses unchanged)
+      finalJson = clauses;
     }
-
     setIsLoading(true);
     try {
       const payload = {
@@ -130,21 +131,19 @@ export default function ManageStandards() {
         standard_numbers: standardNumbers.filter((n) => n.trim() !== ""),
         template_data: finalJson,
       };
-
       if (editingId) {
         await apiClient.put(`/standards/${editingId}`, payload);
-        toast.success("Standard Updated Successfully!");
+        toast.success("Standard Updated!");
         setEditingId(null);
       } else {
         await apiClient.post("/standards", payload);
-        toast.success("Standard Created Successfully!");
+        toast.success("Standard Created!");
       }
-
       setName("");
-      setStandardNumber("");
       setLabId("");
       setJsonFile(null);
       setClauses([]);
+      setStandardNumbers([""]);
       fetchData();
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to save");
@@ -159,7 +158,7 @@ export default function ManageStandards() {
       await apiClient.delete(`/standards/${id}`);
       toast.success("Deleted");
       fetchData();
-    } catch (err) {
+    } catch {
       toast.error("Cannot delete. Used in existing reports.");
     }
   };
@@ -173,8 +172,8 @@ export default function ManageStandards() {
     }
   };
 
-  // --- BUILDER HELPERS ---
-  const addClause = () => {
+  // Builder helpers (unchanged from original)
+  const addClause = () =>
     setClauses([
       ...clauses,
       {
@@ -190,51 +189,44 @@ export default function ManageStandards() {
         tables: [],
       },
     ]);
-  };
-  const updateClause = (idx, field, value) => {
+  const updateClause = (i, f, v) => {
     const n = [...clauses];
-    n[idx][field] = value;
+    n[i][f] = v;
     setClauses(n);
   };
-  const removeClause = (idx) => {
+  const removeClause = (i) => {
     const n = [...clauses];
-    n.splice(idx, 1);
+    n.splice(i, 1);
     setClauses(n);
   };
-
-  const addSubClause = (cIdx) => {
+  const addSubClause = (ci) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul.push({ kode: "", butir: [] });
+    n[ci].sub_klausul.push({ kode: "", butir: [] });
     setClauses(n);
   };
-  const updateSubClause = (cIdx, sIdx, field, value) => {
+  const updateSubClause = (ci, si, f, v) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul[sIdx][field] = value;
+    n[ci].sub_klausul[si][f] = v;
     setClauses(n);
   };
-  const removeSubClause = (cIdx, sIdx) => {
+  const removeSubClause = (ci, si) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul.splice(sIdx, 1);
+    n[ci].sub_klausul.splice(si, 1);
     setClauses(n);
   };
-
-  const addItem = (cIdx, sIdx) => {
+  const addItem = (ci, si) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul[sIdx].butir.push({
-      kode: "",
-      teks: "",
-      keputusan: null,
-    });
+    n[ci].sub_klausul[si].butir.push({ kode: "", teks: "", keputusan: null });
     setClauses(n);
   };
-  const updateItem = (cIdx, sIdx, bIdx, field, value) => {
+  const updateItem = (ci, si, bi, f, v) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul[sIdx].butir[bIdx][field] = value;
+    n[ci].sub_klausul[si].butir[bi][f] = v;
     setClauses(n);
   };
-  const removeItem = (cIdx, sIdx, bIdx) => {
+  const removeItem = (ci, si, bi) => {
     const n = [...clauses];
-    n[cIdx].sub_klausul[sIdx].butir.splice(bIdx, 1);
+    n[ci].sub_klausul[si].butir.splice(bi, 1);
     setClauses(n);
   };
 
@@ -245,12 +237,10 @@ export default function ManageStandards() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* LEFT COLUMN: FORM */}
+        {/* LEFT: FORM */}
         <div className="lg:col-span-2 space-y-6">
           <div
-            className={`bg-white p-6 rounded shadow border ${
-              editingId ? "border-sky-500 ring-2 ring-sky-100" : ""
-            }`}
+            className={`bg-white p-6 rounded shadow border ${editingId ? "border-sky-500 ring-2 ring-sky-100" : ""}`}
           >
             <div className="flex justify-between items-center mb-4 border-b pb-2">
               <h2 className="text-lg font-semibold">
@@ -294,7 +284,7 @@ export default function ManageStandards() {
                     />
                     {standardNumbers.length > 1 && (
                       <button
-                        type="button" // Important: type="button" prevents form submit
+                        type="button"
                         onClick={() => removeStandardNumber(idx)}
                         className="text-red-500 border border-red-200 px-3 rounded hover:bg-red-50"
                       >
@@ -332,29 +322,28 @@ export default function ManageStandards() {
 
             {/* TABS */}
             <div className="flex gap-2 mb-4 border-b">
-              <button
-                onClick={() => setActiveTab("BUILDER")}
-                className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-                  activeTab === "BUILDER"
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "text-gray-500"
-                }`}
-              >
-                <FaList /> Visual Builder
-              </button>
-              <button
-                onClick={() => setActiveTab("JSON")}
-                className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
-                  activeTab === "JSON"
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "text-gray-500"
-                }`}
-              >
-                <FaFileCode /> Upload JSON
-              </button>
+              {[
+                { id: "BUILDER", label: "Visual Builder", icon: FaList },
+                { id: "JSON", label: "Upload JSON", icon: FaFileCode },
+                ...(editingId
+                  ? [{ id: "TABEL", label: "Template Tabel", icon: FaTable }]
+                  : []),
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-4 py-2 text-sm font-medium flex items-center gap-2 ${
+                    activeTab === tab.id
+                      ? "border-b-2 border-blue-600 text-blue-600"
+                      : "text-gray-500"
+                  }`}
+                >
+                  <tab.icon size={12} /> {tab.label}
+                </button>
+              ))}
             </div>
 
-            {/* TAB CONTENT: BUILDER */}
+            {/* BUILDER tab */}
             {activeTab === "BUILDER" && (
               <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
                 {clauses.map((clause, cIdx) => (
@@ -383,7 +372,6 @@ export default function ManageStandards() {
                         <FaTrash />
                       </button>
                     </div>
-
                     <div className="pl-6 space-y-3 border-l-2 border-gray-200 ml-2">
                       {clause.sub_klausul.map((sub, sIdx) => (
                         <div key={sIdx} className="bg-white p-3 rounded border">
@@ -397,11 +385,11 @@ export default function ManageStandards() {
                                   cIdx,
                                   sIdx,
                                   "kode",
-                                  e.target.value
+                                  e.target.value,
                                 )
                               }
                             />
-                            <div className="flex-1"></div>
+                            <div className="flex-1" />
                             <button
                               onClick={() => removeSubClause(cIdx, sIdx)}
                               className="text-red-400 text-xs"
@@ -409,7 +397,6 @@ export default function ManageStandards() {
                               <FaTrash />
                             </button>
                           </div>
-
                           <div className="space-y-2">
                             {sub.butir.map((butir, bIdx) => (
                               <div
@@ -426,7 +413,7 @@ export default function ManageStandards() {
                                       sIdx,
                                       bIdx,
                                       "kode",
-                                      e.target.value
+                                      e.target.value,
                                     )
                                   }
                                 />
@@ -441,7 +428,7 @@ export default function ManageStandards() {
                                       sIdx,
                                       bIdx,
                                       "teks",
-                                      e.target.value
+                                      e.target.value,
                                     )
                                   }
                                 />
@@ -471,7 +458,6 @@ export default function ManageStandards() {
                     </div>
                   </div>
                 ))}
-
                 <button
                   onClick={addClause}
                   className="w-full py-2 border-2 border-dashed border-gray-300 rounded text-gray-500 hover:border-blue-500 hover:text-blue-500 flex justify-center items-center gap-2"
@@ -481,7 +467,7 @@ export default function ManageStandards() {
               </div>
             )}
 
-            {/* TAB CONTENT: JSON */}
+            {/* JSON tab */}
             {activeTab === "JSON" && (
               <div className="p-4 bg-gray-50 rounded border border-dashed border-gray-300">
                 <input
@@ -496,43 +482,52 @@ export default function ManageStandards() {
               </div>
             )}
 
-            <div className="pt-4 border-t mt-4">
-              <button
-                onClick={handleSubmit}
-                disabled={isLoading || !name || !labId}
-                className={`w-full text-white py-3 rounded flex justify-center items-center gap-2 font-semibold shadow ${
-                  editingId
-                    ? "bg-sky-600 hover:bg-sky-700"
-                    : "bg-emerald-600 hover:bg-emerald-700"
-                }`}
-              >
-                {isLoading ? (
-                  "Saving..."
-                ) : editingId ? (
-                  <>
-                    <FaSave /> Update Standard
-                  </>
-                ) : (
-                  <>
-                    <FaSave /> Create Standard
-                  </>
-                )}
-              </button>
-            </div>
+            {/* TABEL tab — TemplateBuilder */}
+            {activeTab === "TABEL" && editingId && (
+              <div className="min-h-[300px]">
+                <TemplateBuilder
+                  standardId={editingId}
+                  subClauses={getSubClauses()}
+                />
+              </div>
+            )}
+
+            {/* Save button (not shown on TABEL tab — templates save themselves) */}
+            {activeTab !== "TABEL" && (
+              <div className="pt-4 border-t mt-4">
+                <button
+                  onClick={handleSubmit}
+                  disabled={isLoading || !name || !labId}
+                  className={`w-full text-white py-3 rounded flex justify-center items-center gap-2 font-semibold shadow ${
+                    editingId
+                      ? "bg-sky-600 hover:bg-sky-700"
+                      : "bg-emerald-600 hover:bg-emerald-700"
+                  }`}
+                >
+                  {isLoading ? (
+                    "Saving..."
+                  ) : editingId ? (
+                    <>
+                      <FaSave /> Update Standard
+                    </>
+                  ) : (
+                    <>
+                      <FaSave /> Create Standard
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* RIGHT COLUMN: LIST BY LAB */}
+        {/* RIGHT: LIST */}
         <div className="bg-white p-6 rounded shadow border h-fit">
           <h2 className="text-lg font-semibold mb-4">Existing Standards</h2>
           <div className="space-y-4">
             {labs.map((lab) => {
-              const hasStandards =
-                lab.TestStandards && lab.TestStandards.length > 0;
-              if (!hasStandards) return null;
-
+              if (!lab.TestStandards?.length) return null;
               const isExpanded = expandedLabs[lab.id];
-
               return (
                 <div key={lab.id} className="border rounded overflow-hidden">
                   <button
@@ -558,7 +553,6 @@ export default function ManageStandards() {
                       )}
                     </div>
                   </button>
-
                   {isExpanded && (
                     <div className="bg-white divide-y">
                       {lab.TestStandards.map((s) => (
@@ -574,19 +568,16 @@ export default function ManageStandards() {
                             <div className="font-medium text-gray-800 text-sm">
                               {s.name}
                             </div>
-                            {s.standard_numbers &&
-                              s.standard_numbers.length > 0 && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                  {s.standard_numbers.join(", ")}
-                                </div>
-                              )}
+                            {s.standard_numbers?.length > 0 && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {s.standard_numbers.join(", ")}
+                              </div>
+                            )}
                             <div className="text-[10px] text-gray-400 mt-1">
                               Edited:{" "}
                               {new Date(s.updatedAt).toLocaleDateString()}
                             </div>
                           </div>
-
-                          {/* BUTTONS: Always visible on mobile, visible on hover for desktop */}
                           <div className="flex gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => handleEdit(s)}
@@ -610,10 +601,7 @@ export default function ManageStandards() {
                 </div>
               );
             })}
-
-            {labs.every(
-              (l) => !l.TestStandards || l.TestStandards.length === 0
-            ) && (
+            {labs.every((l) => !l.TestStandards?.length) && (
               <p className="text-gray-500 italic text-center py-4">
                 No standards found.
               </p>

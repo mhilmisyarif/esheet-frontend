@@ -1,17 +1,17 @@
 // src/pages/DashboardRedirect.jsx
 import React from "react";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import TechnicianDashboard from "./TechnicianDashboard";
-import EngineerDashboard from "./EngineerDashboard";
-// Import AdminDashboard here in the future
 
 export default function DashboardRedirect() {
   const { user } = useAuth();
 
-  if (user?.role === "ENGINEER" || user?.role === "ADMIN") {
-    return <EngineerDashboard />;
-  }
+  if (user?.role === "TECHNICIAN")
+    return <Navigate to="/technician-dashboard" replace />;
+  if (user?.role === "ENGINEER" || user?.role === "ADMIN")
+    return <Navigate to="/engineer-dashboard" replace />;
+  if (user?.role === "DRAFTER")
+    return <Navigate to="/engineer-dashboard" replace />;
 
-  // Default to Technician Dashboard
-  return <TechnicianDashboard />;
+  return <Navigate to="/login" replace />;
 }

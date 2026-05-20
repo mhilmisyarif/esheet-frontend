@@ -1,37 +1,67 @@
 // src/components/KlausulButirTable.jsx
+//
+// Clause fill UI — redesigned to the E-Datasheet "klausul editor" design:
+// test-conditions card, subsection clause-cards, ci-table, L/TB/G segmented
+// controls and inline Hasil/Catatan. All decision / autosave logic preserved.
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
-// import sud from "../mocks/api";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
+import { FiMoreHorizontal, FiTrash2, FiRotateCcw, FiCheck } from "react-icons/fi";
 import apiClient from "../api";
-/**
- * KlausulButirTable.jsx
- * - Per-klausul meta (tester, tanggal, suhu, kelembaban)
- * - Per-klausul tables (CRUD table lampiran)
- * - Images uploader (sample gallery) — displayed at bottom + modal via menu
- * - Autosave (butir/meta/tables/images) + parent registration
- *
- * Note: ensure src/mocks/api.js exposes:
- * - updateButir(sampleId, klausulCode, butirKode, payload)
- * - bulkUpdate(sampleId, updates)
- * - updateKlausulMeta(sampleId, klausulCode, meta)
- * - saveKlausulTables(sampleId, klausulCode, tables)
- * - uploadImage(sampleId, file)
- * - deleteImage(sampleId, imageId)
- * - updateImages(sampleId, images)  (optional)
- *
- * Props:
- * - report, fullReport
- * - onChangeReport (optional)
- * - onRegisterFlush (optional)
- * - onDeleteSample (optional) - called when user chooses Hapus in menu
- */
+import TableInstanceEditor from "./TableInstanceEditor";
 
-const DECISIONS = [
-  { value: "L", label: "L", color: "green" },
-  { value: "TB", label: "TB", color: "gray" },
-  { value: "G", label: "G", color: "red" },
-];
+const SEG_OPTS = ["L", "TB", "G"];
+const SEG_TITLE = { L: "Lulus", TB: "Tidak Berlaku", G: "Gagal" };
+const SEG_ACTIVE = {
+  L: "bg-[#1b9c4d] text-white",
+  TB: "bg-[#f59e0b] text-white",
+  G: "bg-[#d12c45] text-white",
+};
+
+// Segmented L / TB / G control
+function Seg({ value, onChange, small }) {
+  return (
+    <div className="inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5">
+      {SEG_OPTS.map((o) => {
+        const active = value === o;
+        return (
+          <button
+            key={o}
+            type="button"
+            title={SEG_TITLE[o]}
+            onClick={() => onChange(o)}
+            className={`inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
+              small
+                ? "min-w-7 h-6 px-2 text-[11px]"
+                : "min-w-9 h-[30px] px-2.5 text-xs"
+            } ${
+              active
+                ? SEG_ACTIVE[o]
+                : "text-ink-500 hover:bg-navy-50 hover:text-navy-800"
+            }`}
+          >
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const condInput =
+  "w-full px-3 py-2 border border-line rounded-lg text-sm text-navy-800 bg-paper outline-none transition-colors focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/[0.12]";
+
+function CondField({ label, children }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[12px] font-medium text-ink-500 uppercase tracking-[0.06em]">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
 
 export default function KlausulButirTable({
   report,
@@ -43,32 +73,26 @@ export default function KlausulButirTable({
   userName,
 }) {
   const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
-  const [editingButir, setEditingButir] = useState(null);
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [imagesState, setImagesState] = useState(report.images || []);
-
-  // menu/modal states (NEW)
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showImageModal, setShowImageModal] = useState(false);
 
-  // dirtyRef keys:
-  // - <butirKode>
-  // - meta-<klausulCode>
-  // - tables-<klausulCode>
-  // - images
   const dirtyRef = useRef({});
   const persistedRef = useRef({});
+  const menuRef = useRef(null);
+
   const sampleId =
     (fullReport && fullReport.sample_id) ||
     report.sample_id ||
     (fullReport && fullReport.sample && fullReport.sample.id) ||
     null;
+
   const reportId =
     (fullReport && fullReport.id) || (report && report.id) || null;
 
-  // init local state and persisted snapshot
+  const reportStatus = fullReport?.status || report?.status || "DRAFT";
+
   useEffect(() => {
-    // Inisialisasi localKlausulArr HANYA dengan klausul aktif
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
     cloned.forEach((k) => {
       if (!k.meta)
@@ -78,14 +102,10 @@ export default function KlausulButirTable({
           temperature: null,
           humidity: null,
         };
-      if (!k.tables) k.tables = [];
     });
     setLocalKlausulArr(cloned);
+    setImagesState(fullReport.images || []);
 
-    // Inisialisasi imagesState
-    setImagesState(fullReport.images || []); // Ambil images dari fullReport
-
-    // persisted snapshot (ini sepertinya tidak lagi sinkron, tapi kita biarkan)
     const map = {};
     cloned.forEach((k) => {
       k.sub_klausul.forEach((s) => {
@@ -97,14 +117,20 @@ export default function KlausulButirTable({
         });
       });
       map[`meta-${k.klausul}`] = { ...(k.meta || {}) };
-      map[`tables-${k.klausul}`] = JSON.stringify(k.tables || []);
     });
     map["images"] = JSON.stringify(fullReport.images || []);
     persistedRef.current = map;
+  }, [report, fullReport.images]);
 
-    // Perbaikan dari bug sebelumnya (sudah benar)
-    // dirtyRef.current = {}; (Dihapus)
-  }, [report, fullReport.images]); // <-- Tambahkan fullReport.images
+  // Close the kebab menu on outside click
+  useEffect(() => {
+    const h = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target))
+        setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
 
   const markDirty = useCallback((key) => {
     dirtyRef.current = { ...dirtyRef.current, [key]: true };
@@ -117,30 +143,38 @@ export default function KlausulButirTable({
         k.sub_klausul.forEach((s) =>
           s.butir.forEach((b) => {
             if (b.kode === butirKode) {
-              // --- CORRECTION LOGIC START ---
-              // If Engineer is changing it, preserve the original
               if (userRole === "ENGINEER" || userRole === "ADMIN") {
-                // If this is the FIRST correction, save the current value as original
                 if (b.original_keputusan === undefined) {
                   b.original_keputusan = b.keputusan;
                 }
-
-                // Mark as corrected if it differs from the original
-                // (If they change it back to original, we remove the flag)
                 b.is_corrected = decision !== b.original_keputusan;
-
-                // Optional: track who corrected it
-                if (b.is_corrected) {
-                  b.corrected_by = userName;
-                }
+                if (b.is_corrected) b.corrected_by = userName;
               }
-              // --- CORRECTION LOGIC END ---
-
               b.keputusan = decision;
-              b.last_modified_by = userName || "demo-user";
+              b.last_modified_by = userName || "unknown";
               b.last_modified_at = new Date().toISOString();
             }
-          })
+          }),
+        );
+      }
+    });
+    setLocalKlausulArr(next);
+    onChangeReport && onChangeReport(next);
+    markDirty(butirKode);
+  }
+
+  function updateLocalCatatan(klausulCode, butirKode, text) {
+    const next = JSON.parse(JSON.stringify(localKlausulArr));
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) =>
+          s.butir.forEach((b) => {
+            if (b.kode === butirKode) {
+              b.hasil_catatan = text;
+              b.last_modified_by = userName || "unknown";
+              b.last_modified_at = new Date().toISOString();
+            }
+          }),
         );
       }
     });
@@ -164,134 +198,30 @@ export default function KlausulButirTable({
     markDirty(`meta-${klausulCode}`);
   }
 
-  function updateKlausulTables(klausulCode, tables) {
-    const next = JSON.parse(JSON.stringify(localKlausulArr));
-    let changedClause = null;
-    next.forEach((k) => {
-      if (k.klausul === klausulCode) {
-        k.tables = tables;
-        changedClause = k;
-      }
-    });
-    setLocalKlausulArr(next);
-    onChangeReport && onChangeReport([changedClause]);
-    markDirty(`tables-${klausulCode}`);
-  }
-
-  // images handlers
-  function setImages(images) {
-    setImagesState(images);
-    markDirty("images");
-    // Beri tahu parent bahwa 'images' telah berubah
-    onChangeReport && onChangeReport(null, images);
-  }
-
   const isButirFilled = (b) => !!b.keputusan;
 
-  function findButirValue(butirKode) {
-    for (const k of localKlausulArr)
-      for (const s of k.sub_klausul)
-        for (const b of s.butir)
-          if (b.kode === butirKode)
-            return { keputusan: b.keputusan, hasil_catatan: b.hasil_catatan };
-    return {};
-  }
-
-  // save note (defensive) - Perbaikan dari bug sebelumnya
-  async function saveNote(klausulCodeParam, butirKode, text) {
-    let klausulCode = klausulCodeParam;
-    if (!klausulCode) {
-      for (const k of localKlausulArr) {
-        for (const s of k.sub_klausul) {
-          for (const b of s.butir) {
-            if (b.kode === butirKode) {
-              klausulCode = k.klausul;
-              break;
-            }
-          }
-          if (klausulCode) break;
-        }
-        if (klausulCode) break;
-      }
-    }
-
-    if (!reportId) {
-      console.error("saveNote: reportId missing", {
-        klausulCode,
-        butirKode,
-        text,
-      });
-      toast.error("Gagal menyimpan catatan (reportId hilang)");
-      return { ok: false };
-    }
-
-    try {
-      setIsAutosaving(true);
-
-      // Asumsi Anda punya endpoint ini di backend
-      const res = await apiClient.patch(`/reports/${reportId}/butir`, {
-        klausulCode: klausulCode,
-        butirKode: butirKode,
-        payload: {
-          hasil_catatan: text,
-          by: "demo-user", // TODO: Ganti dengan user asli
-        },
-      });
-
-      if (res && res.status >= 400) throw new Error("API error");
-
-      const copy = { ...dirtyRef.current };
-      delete copy[butirKode];
-      dirtyRef.current = copy;
-      persistedRef.current[butirKode] = {
-        keputusan: findButirValue(butirKode).keputusan,
-        hasil_catatan: text,
-      };
-      toast.success("Catatan berhasil disimpan");
-      return { ok: true };
-    } catch (e) {
-      console.error("saveNote error", e);
-      toast.error("Gagal menyimpan catatan");
-      return { ok: false, error: e };
-    } finally {
-      setIsAutosaving(false);
-    }
-  }
-
-  // build dirty updates (fungsi ini tidak lagi digunakan oleh flushAutosave)
-  function buildDirtyUpdates() {
-    // ... (logika ini bisa disederhanakan/dihapus jika tidak dipakai)
-  }
-
-  // flush: send the entire data blob
   const flushAutosave = useCallback(async () => {
-    // Jangan simpan jika tidak ada reportId atau tidak ada perubahan
-    if (!reportId || Object.keys(dirtyRef.current).length === 0) {
-      toast("Tidak ada perubahan untuk disimpan"); // Beri tahu user
+    if (reportStatus === "APPROVED") {
       return { ok: true, count: 0 };
     }
 
-    // ==========================================================
-    // INI ADALAH PERBAIKAN UTAMA:
-    // Ambil data dari 'fullReport.data' (prop dari parent)
-    // BUKAN 'localKlausulArr' (state lokal)
-    // ==========================================================
+    if (!reportId || Object.keys(dirtyRef.current).length === 0) {
+      toast("Tidak ada perubahan untuk disimpan");
+      return { ok: true, count: 0 };
+    }
+
     const currentReportData = fullReport.data;
-    const currentImagesData = imagesState; // Ambil state gambar saat ini
+    const currentImagesData = imagesState;
 
     setIsAutosaving(true);
     try {
-      // Kirim data LENGKAP ke backend
       await apiClient.patch(`/reports/${reportId}/data`, {
         data: currentReportData,
-        images: currentImagesData, // Kirim juga data gambar
+        images: currentImagesData,
       });
-
-      // Jika sukses, bersihkan semua tanda 'dirty'
       dirtyRef.current = {};
-
       toast.success("Perubahan berhasil disimpan");
-      return { ok: true, count: 1 }; // 1 operasi simpan
+      return { ok: true, count: 1 };
     } catch (e) {
       toast.error("Gagal menyimpan perubahan");
       console.error("flushAutosave error", e);
@@ -299,16 +229,14 @@ export default function KlausulButirTable({
     } finally {
       setIsAutosaving(false);
     }
-  }, [reportId, fullReport, imagesState]); // <-- TAMBAHKAN fullReport dan imagesState
+  }, [reportId, fullReport, imagesState, reportStatus]);
 
-  // register flush with parent
   useEffect(() => {
     if (typeof onRegisterFlush === "function") {
       onRegisterFlush(flushAutosave);
     }
   }, [onRegisterFlush, flushAutosave]);
 
-  // autosave interval
   useEffect(() => {
     const interval = setInterval(() => {
       if (Object.keys(dirtyRef.current).length > 0) flushAutosave();
@@ -316,18 +244,11 @@ export default function KlausulButirTable({
     return () => clearInterval(interval);
   }, [flushAutosave]);
 
-  // save a single note (used by EditorModal)
-  async function saveNoteWrapper(klausulCode, butirKode, text) {
-    // Fungsi ini hanya menandai dirty. Sudah benar.
-    markDirty(butirKode);
-  }
-
-  // handle delete sample from menu
   async function handleDeleteSample() {
     setMenuOpen(false);
     if (
       !window.confirm(
-        "Hapus sample ini dari sistem? Tindakan ini tidak bisa dibatalkan."
+        "Hapus sample ini dari sistem? Tindakan ini tidak bisa dibatalkan.",
       )
     )
       return;
@@ -335,10 +256,8 @@ export default function KlausulButirTable({
       if (typeof onDeleteSample === "function") {
         await onDeleteSample(sampleId);
       } else {
-        // fallback: panggil API hapus di sini jika ada
         await apiClient.delete(`/samples/${sampleId}`);
         toast.success("Sample berhasil dihapus");
-        // Mungkin perlu navigasi kembali
       }
     } catch (e) {
       toast.error("Gagal menghapus sample");
@@ -346,101 +265,157 @@ export default function KlausulButirTable({
     }
   }
 
-  // RENDER
+  function bulkSetKlausul(klausulCode, value) {
+    const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) =>
+          s.butir.forEach((b) => {
+            b.keputusan = value;
+            b.last_modified_at = new Date().toISOString();
+            markDirty(b.kode);
+          }),
+        );
+        changedClause = k;
+      }
+    });
+    setLocalKlausulArr(next);
+    onChangeReport && onChangeReport([changedClause]);
+  }
+
+  function bulkSetSubclause(klausulCode, subKode, value) {
+    const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) => {
+          if (s.kode === subKode) {
+            s.butir.forEach((b) => {
+              b.keputusan = value;
+              b.last_modified_at = new Date().toISOString();
+              markDirty(b.kode);
+            });
+          }
+        });
+        changedClause = k;
+      }
+    });
+    setLocalKlausulArr(next);
+    onChangeReport && onChangeReport([changedClause]);
+  }
+
+  function resetClause(klausulCode) {
+    setMenuOpen(false);
+    if (
+      !window.confirm(
+        "Reset semua keputusan & catatan untuk klausul ini?",
+      )
+    )
+      return;
+    const next = JSON.parse(JSON.stringify(localKlausulArr));
+    let changedClause = null;
+    next.forEach((k) => {
+      if (k.klausul === klausulCode) {
+        k.sub_klausul.forEach((s) =>
+          s.butir.forEach((b) => {
+            b.keputusan = "";
+            b.hasil_catatan = "";
+            b.last_modified_at = new Date().toISOString();
+            markDirty(b.kode);
+          }),
+        );
+        changedClause = k;
+      }
+    });
+    setLocalKlausulArr(next);
+    onChangeReport && onChangeReport([changedClause]);
+  }
+
+  const dirtyCount = Object.keys(dirtyRef.current).length;
+  const autosaveText = isAutosaving
+    ? "Menyimpan otomatis…"
+    : dirtyCount > 0
+      ? "Perubahan belum tersimpan"
+      : "Semua perubahan tersimpan";
+
+  const thCls =
+    "bg-[#fbfcfe] text-left text-[11px] font-semibold text-ink-500 uppercase tracking-[0.06em] px-4 py-2.5 border-b border-line";
+
   return (
-    <div>
-      {/* TOP BAR containing the 3-dot menu on left */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {/* Three-dot menu (left) */}
-          <div className="relative">
-            <button
-              className="px-3 py-2 border rounded bg-white hover:bg-gray-50"
-              onClick={() => setMenuOpen((v) => !v)}
-              aria-label="Menu"
-            >
-              {/* vertical dots */}
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-              >
-                <circle cx="12" cy="5" r="1.5"></circle>
-                <circle cx="12" cy="12" r="1.5"></circle>
-                <circle cx="12" cy="19" r="1.5"></circle>
-              </svg>
-            </button>
-
-            {menuOpen && (
-              <div className="absolute left-0 mt-2 w-56 bg-white border rounded shadow z-50">
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowImageModal(true);
-                  }}
-                >
-                  Input Komponen + Gambar
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-red-600"
-                  onClick={handleDeleteSample}
-                >
-                  Hapus
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* info text */}
-          <div className="text-sm text-gray-600">
-            Klausul pengujian — isi hasil & keputusan per butir
-          </div>
-        </div>
-
-        <div className="text-sm text-gray-500">
-          {isAutosaving
-            ? "Menyimpan otomatis..."
-            : Object.keys(dirtyRef.current).length > 0
-            ? "Perubahan belum tersimpan"
-            : "Semua perubahan tersimpan"}
-        </div>
-      </div>
-
-      {/* Render HANYA klausul yang ada di localKlausulArr.
-        localKlausulArr HANYA berisi klausul aktif (dari prop 'report').
-        Ini sudah benar.
-      */}
+    <div className="flex flex-col gap-4">
       {localKlausulArr.map((k) => (
-        <div
-          key={k.klausul}
-          id={`clause-${k.klausul}`}
-          className="bg-white rounded border mb-6"
-        >
-          {/* META FORM */}
-          <div className="p-4 border-b bg-gray-50">
-            <div className="grid grid-cols-12 gap-4 items-center">
-              <div className="col-span-4">
-                <label className="text-sm text-gray-600 block">
-                  Nama Teknisi / Penguji
-                </label>
+        <React.Fragment key={k.klausul}>
+          {/* TEST CONDITIONS CARD */}
+          <section
+            id={`clause-${k.klausul}`}
+            className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden"
+          >
+            <div className="flex flex-col gap-3 nav:flex-row nav:items-center nav:justify-between px-4 nav:px-5 py-3.5 border-b border-line-soft">
+              <div className="flex items-center gap-3">
+                <div className="relative" ref={menuRef}>
+                  <button
+                    onClick={() => setMenuOpen((o) => !o)}
+                    aria-label="Menu klausul"
+                    className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-ink-400 hover:bg-navy-50 hover:text-navy-800 transition-colors ${
+                      menuOpen ? "bg-navy-50 text-navy-800" : ""
+                    }`}
+                  >
+                    <FiMoreHorizontal size={18} />
+                  </button>
+                  {menuOpen && (
+                    <div className="absolute left-0 top-10 min-w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5 z-20">
+                      <button
+                        onClick={() => resetClause(k.klausul)}
+                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+                      >
+                        <FiRotateCcw size={14} /> Reset klausul
+                      </button>
+                      <button
+                        onClick={handleDeleteSample}
+                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
+                      >
+                        <FiTrash2 size={14} /> Hapus sample
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <span className="text-[13px] text-ink-500">
+                  Klausul pengujian — isi kondisi &amp; keputusan per butir
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
+                  {isAutosaving ? (
+                    <FaSpinner className="animate-spin" size={12} />
+                  ) : (
+                    <span className="w-1.5 h-1.5 rounded-full bg-ok-fg/60" />
+                  )}
+                  {autosaveText}
+                </span>
+                <span className="flex items-center gap-2 text-xs text-ink-400">
+                  <span>Set semua</span>
+                  <Seg
+                    value={null}
+                    onChange={(v) => bulkSetKlausul(k.klausul, v)}
+                    small
+                  />
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 nav:grid-cols-4 gap-5 p-4 nav:p-5">
+              <CondField label="Nama Teknisi / Penguji">
                 <input
                   value={(k.meta && k.meta.tester_name) || ""}
                   onChange={(e) =>
-                    updateKlausulMeta(k.klausul, {
-                      tester_name: e.target.value,
-                    })
+                    updateKlausulMeta(k.klausul, { tester_name: e.target.value })
                   }
-                  className="w-full border rounded px-2 py-1"
-                  placeholder="Nama teknisi / penguji"
+                  className={condInput}
+                  placeholder="Nama teknisi"
                 />
-              </div>
-
-              <div className="col-span-3">
-                <label className="text-sm text-gray-600 block">
-                  Tanggal Uji
-                </label>
+              </CondField>
+              <CondField label="Tanggal Uji">
                 <input
                   type="date"
                   value={
@@ -453,12 +428,10 @@ export default function KlausulButirTable({
                       test_datetime: toIsoFromDateLocal(e.target.value),
                     })
                   }
-                  className="w-full border rounded px-2 py-1"
+                  className={condInput}
                 />
-              </div>
-
-              <div className="col-span-2">
-                <label className="text-sm text-gray-600 block">Suhu (°C)</label>
+              </CondField>
+              <CondField label="Suhu (°C)">
                 <input
                   type="number"
                   step="0.1"
@@ -469,15 +442,11 @@ export default function KlausulButirTable({
                         e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
-                  className="w-full border rounded px-2 py-1"
+                  className={condInput}
                   placeholder="25.0"
                 />
-              </div>
-
-              <div className="col-span-2">
-                <label className="text-sm text-gray-600 block">
-                  Kelembaban (%)
-                </label>
+              </CondField>
+              <CondField label="Kelembaban (%)">
                 <input
                   type="number"
                   step="0.1"
@@ -488,182 +457,109 @@ export default function KlausulButirTable({
                         e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
-                  className="w-full border rounded px-2 py-1"
+                  className={condInput}
                   placeholder="60"
                 />
-              </div>
+              </CondField>
             </div>
-          </div>
+          </section>
 
-          {/* header */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <div>
-              <div className="text-lg font-semibold">
-                {k.klausul} — {k.judul || ""}
-              </div>
-              <div className="text-xs text-gray-400">
-                {k.sub_klausul.reduce((a, b) => a + b.butir.length, 0)} butir
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-gray-500 mr-2">Set semua:</div>
-              <button
-                onClick={() => bulkSetKlausul(k.klausul, "L")}
-                className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded text-sm"
+          {/* SUBSECTION CLAUSE CARDS */}
+          {k.sub_klausul.map((s) => {
+            const subFilled =
+              s.butir.length > 0 && s.butir.every((b) => isButirFilled(b));
+            return (
+              <section
+                key={s.kode}
+                className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden"
               >
-                L
-              </button>
-              <button
-                onClick={() => bulkSetKlausul(k.klausul, "TB")}
-                className="px-3 py-1 bg-gray-100 text-gray-800 rounded text-sm"
-              >
-                TB
-              </button>
-              <button
-                onClick={() => bulkSetKlausul(k.klausul, "G")}
-                className="px-3 py-1 bg-red-100 text-red-800 rounded text-sm"
-              >
-                G
-              </button>
-            </div>
-          </div>
-
-          {/* content */}
-          <div>
-            {k.sub_klausul.map((s) => (
-              <div key={s.kode} className="p-4 border-b last:border-b-0">
-                {/* --- Tabel Pengujian (SNI style) — hanya: Syarat-syarat Pengujian | Hasil - Catatan | Keputusan --- */}
-                <div className="mt-4">
-                  {/* judul sub-klausul sebagai grup header (merge across columns) */}
-                  <div className="mb-2 border border-gray-400 rounded-t bg-gray-50">
-                    <div className="px-3 py-2 font-semibold text-gray-800">
-                      {s.kode} —{" "}
-                      <span className="font-medium">{s.judul || ""}</span>
-                    </div>
+                <div className="flex flex-col gap-3 nav:flex-row nav:items-center nav:justify-between px-4 nav:px-6 py-4 bg-navy-50 border-b border-line">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-mono font-bold text-sm text-navy-800 bg-white border border-line px-2.5 py-1 rounded-lg">
+                      {s.kode}
+                    </span>
+                    {s.judul && (
+                      <span className="text-[15px] font-semibold text-navy-800">
+                        {s.judul}
+                      </span>
+                    )}
+                    <span className="text-[13px] text-ink-400">
+                      {s.butir.length} butir uji
+                    </span>
+                    {subFilled && (
+                      <span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-ok-bg text-ok-fg text-[11px] font-semibold">
+                        <FiCheck size={11} /> Lengkap
+                      </span>
+                    )}
                   </div>
+                  <div className="flex items-center gap-2 text-xs text-ink-500">
+                    <span>Set semua di {s.kode}</span>
+                    <Seg
+                      value={null}
+                      onChange={(v) => bulkSetSubclause(k.klausul, s.kode, v)}
+                      small
+                    />
+                  </div>
+                </div>
 
-                  <table className="w-full border border-gray-400 border-collapse text-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-separate border-spacing-0">
                     <thead>
-                      <tr className="bg-gray-100 text-gray-800 font-medium">
-                        <th className="border border-gray-400 px-3 py-2 text-left">
+                      <tr>
+                        <th className={`${thCls} w-1/2`}>
                           Syarat-syarat Pengujian
                         </th>
-                        <th className="border border-gray-400 px-3 py-2 text-center w-64">
-                          Hasil - Catatan
-                        </th>
-                        <th className="border border-gray-400 px-3 py-2 text-center w-56">
+                        <th className={`${thCls} w-[30%]`}>Hasil / Catatan</th>
+                        <th className={`${thCls} w-[20%] !text-right`}>
                           Keputusan
                         </th>
                       </tr>
                     </thead>
-
                     <tbody>
-                      {s.butir.map((b, i) => (
-                        <tr
-                          key={b.kode}
-                          className={`align-top transition ${
-                            !isButirFilled(b) ? "bg-yellow-50" : "bg-white"
-                          } hover:bg-gray-50`}
-                        >
-                          {/* SYARAT-SYARAT PENGUJIAN (butir teks) */}
-                          <td className="border border-gray-400 px-3 py-3 align-top">
-                            <div className="text-sm text-gray-800">
-                              <div className="font-semibold inline-block mr-2 text-gray-700">
-                                {b.kode}
-                              </div>
-                              <span>{b.teks}</span>
-                            </div>
+                      {s.butir.map((b) => (
+                        <tr key={b.kode}>
+                          <td className="px-4 py-4 border-b border-line-soft align-top text-sm">
+                            <span className="font-mono font-bold text-navy-700 mr-2">
+                              {b.kode}
+                            </span>
+                            <span className="text-ink-700 leading-relaxed">
+                              {b.teks}
+                            </span>
                           </td>
-
-                          {/* HASIL - CATATAN */}
-                          <td className="border border-gray-400 px-3 py-3 text-center align-top">
-                            {b.hasil_catatan ? (
-                              <button
-                                onClick={() => setEditingButir(b)}
-                                className="w-full text-left px-2 py-1 bg-gray-50 rounded border hover:bg-gray-100 text-sm text-gray-700"
-                              >
-                                {b.hasil_catatan}
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setEditingButir(b)}
-                                className="mx-auto w-8 h-8 rounded-full flex items-center justify-center border border-gray-300 hover:bg-gray-100"
-                                aria-label={`Tambah catatan untuk ${b.kode}`}
-                              >
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  className="w-4 h-4 text-gray-600"
-                                  viewBox="0 0 20 20"
-                                  fill="currentColor"
-                                >
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
-                              </button>
-                            )}
+                          <td className="px-4 py-4 border-b border-line-soft align-top">
+                            <textarea
+                              rows={1}
+                              value={b.hasil_catatan || ""}
+                              onChange={(e) =>
+                                updateLocalCatatan(
+                                  k.klausul,
+                                  b.kode,
+                                  e.target.value,
+                                )
+                              }
+                              placeholder="Catatan hasil…"
+                              className="w-full border border-line rounded-lg px-2.5 py-2 text-[13px] text-navy-800 bg-white resize-y min-h-[38px] max-h-[120px] outline-none transition-colors focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/10 placeholder:text-ink-400"
+                            />
                           </td>
-
-                          {/* KEPUTUSAN */}
-                          <td className="border border-gray-400 px-3 py-3 text-center align-top">
-                            <div className="flex flex-col items-center justify-center gap-1">
-                              {/* --- SHOW STRIKETHROUGH IF CORRECTED --- */}
+                          <td className="px-4 py-4 border-b border-line-soft align-top">
+                            <div className="flex flex-col items-end gap-1">
                               {b.is_corrected && b.original_keputusan && (
-                                <div
-                                  className="text-xs text-red-500 font-bold mb-1"
-                                  title={`Originally: ${b.original_keputusan}`}
-                                >
-                                  <span className="line-through decoration-2">
+                                <span className="text-[11px] font-semibold text-bad-fg">
+                                  <span className="line-through">
                                     {b.original_keputusan}
-                                  </span>
-                                  <span className="text-gray-400 text-[10px] ml-1">
-                                    (Rev)
-                                  </span>
-                                </div>
+                                  </span>{" "}
+                                  <span className="text-ink-400">(Rev)</span>
+                                </span>
                               )}
-                              {/* --------------------------------------- */}
-
-                              <div className="flex justify-center gap-2">
-                                {DECISIONS.map((d) => (
-                                  <button
-                                    key={d.value}
-                                    className={`px-3 py-1 rounded border text-sm font-medium transition ${
-                                      d.value === "L"
-                                        ? b.keputusan === "L"
-                                          ? "bg-emerald-600 text-white border-emerald-600"
-                                          : "bg-white text-emerald-600 border-emerald-400"
-                                        : d.value === "TB"
-                                        ? b.keputusan === "TB"
-                                          ? "bg-gray-600 text-white border-gray-600"
-                                          : "bg-white text-gray-600 border-gray-400"
-                                        : b.keputusan === "G"
-                                        ? "bg-red-600 text-white border-red-600"
-                                        : "bg-white text-red-600 border-red-400"
-                                    } ${
-                                      // Add a visual indicator for the active corrected button
-                                      b.is_corrected && b.keputusan === d.value
-                                        ? "ring-2 ring-offset-1 ring-blue-400"
-                                        : ""
-                                    }`}
-                                    onClick={() =>
-                                      updateLocalDecision(
-                                        k.klausul,
-                                        b.kode,
-                                        d.value
-                                      )
-                                    }
-                                  >
-                                    {d.label}
-                                  </button>
-                                ))}
-                              </div>
-
-                              {/* Optional: Show who corrected it */}
-                              {b.is_corrected && (
-                                <span className="text-[9px] text-blue-600">
-                                  By: {b.corrected_by}
+                              <Seg
+                                value={b.keputusan}
+                                onChange={(v) =>
+                                  updateLocalDecision(k.klausul, b.kode, v)
+                                }
+                              />
+                              {b.is_corrected && b.corrected_by && (
+                                <span className="text-[10px] text-navy-600">
+                                  oleh {b.corrected_by}
                                 </span>
                               )}
                             </div>
@@ -673,504 +569,40 @@ export default function KlausulButirTable({
                     </tbody>
                   </table>
                 </div>
-              </div>
-            ))}
+              </section>
+            );
+          })}
 
-            {/* Table editor for this klausul */}
-            <div className="p-4 border-t">
-              <TableEditor
-                sampleId={sampleId}
-                klausulCode={k.klausul}
-                tables={k.tables || []}
-                onChange={(tables) => updateKlausulTables(k.klausul, tables)}
+          {/* STRUCTURED DATA TABLES */}
+          <section className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden">
+            <div className="px-4 nav:px-6 py-4 border-b border-line-soft">
+              <h3 className="text-[15px] font-semibold text-navy-800">
+                Tabel Data Uji
+              </h3>
+            </div>
+            <div className="p-4 nav:p-5">
+              <TableInstanceEditor
+                reportId={reportId}
+                subClauseCode={k.klausul}
+                reportStatus={reportStatus}
+                userRole={userRole}
               />
             </div>
-          </div>
-        </div>
+          </section>
+        </React.Fragment>
       ))}
-
-      {/* Images uploader at the end (kept as gallery) */}
-      <div className="bg-white rounded border p-4 mt-6">
-        <h3 className="text-lg font-semibold mb-2">Galeri Gambar Sampel</h3>
-        <ImageUploader
-          sampleId={sampleId}
-          reportId={reportId}
-          images={imagesState}
-          onChange={setImages}
-        />
-      </div>
-
-      {/* Editor modal */}
-      {editingButir && (
-        <EditorModal
-          butir={editingButir}
-          onClose={() => setEditingButir(null)}
-          onSave={(text) => {
-            const butirKode = editingButir.kode;
-
-            // 1. Update the local state
-            const next = JSON.parse(JSON.stringify(localKlausulArr));
-            let changedClause = null;
-            next.forEach((k) => {
-              k.sub_klausul.forEach((s) =>
-                s.butir.forEach((b) => {
-                  if (b.kode === butirKode) {
-                    b.hasil_catatan = text;
-                    b.last_modified_by = "demo-user"; // TODO: Ganti
-                    b.last_modified_at = new Date().toISOString();
-                    changedClause = k;
-                  }
-                })
-              );
-            });
-            setLocalKlausulArr(next);
-            // Kirim HANYA klausul yang berubah ke parent
-            onChangeReport && onChangeReport([changedClause]);
-
-            // 2. Mark this item as dirty for autosave
-            markDirty(butirKode);
-
-            // 3. Close the modal
-            setEditingButir(null);
-            toast.success("Catatan diperbarui (disimpan otomatis)");
-          }}
-        />
-      )}
-
-      {/* Image modal triggered from menu */}
-      {showImageModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white max-w-3xl w-full rounded shadow p-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-semibold">Input Komponen + Gambar</h3>
-              <button
-                className="text-sm text-gray-600"
-                onClick={() => setShowImageModal(false)}
-              >
-                Tutup
-              </button>
-            </div>
-            <div className="mb-4 text-sm text-gray-700">
-              Unggah gambar komponen atau foto sampel di sini.
-            </div>
-            <ImageUploader
-              sampleId={sampleId}
-              reportId={reportId}
-              images={imagesState}
-              onChange={(imgs) => {
-                setImages(imgs);
-              }}
-            />
-            <div className="flex justify-end mt-3">
-              <button
-                className="px-3 py-1 border rounded mr-2"
-                onClick={() => setShowImageModal(false)}
-              >
-                Selesai
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  // helper: bulk set fungsi
-  function bulkSetKlausul(klausulCode, value) {
-    const next = JSON.parse(JSON.stringify(localKlausulArr));
-    let changedClause = null;
-    next.forEach((k) => {
-      if (k.klausul === klausulCode) {
-        k.sub_klausul.forEach((s) =>
-          s.butir.forEach((b) => {
-            b.keputusan = value;
-            b.last_modified_at = new Date().toISOString();
-          })
-        );
-        changedClause = k;
-      }
-    });
-    setLocalKlausulArr(next);
-    onChangeReport && onChangeReport([changedClause]);
-
-    // mark all butir keys as dirty
-    next.forEach((k) => {
-      if (k.klausul === klausulCode) {
-        k.sub_klausul.forEach((s) => s.butir.forEach((b) => markDirty(b.kode)));
-      }
-    });
-  }
-}
-
-/* -------------------------
-   EditorModal component
-   ------------------------- */
-function EditorModal({ butir, onClose, onSave }) {
-  const [txt, setTxt] = useState(butir.hasil_catatan || "");
-  const [saving, setSaving] = useState(false);
-  useEffect(() => setTxt(butir.hasil_catatan || ""), [butir]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white max-w-2xl w-full rounded shadow p-4">
-        <div className="flex justify-between items-center mb-2">
-          <h3 className="text-lg font-semibold">
-            Edit Hasil - Catatan ({butir.kode})
-          </h3>
-          <button
-            className="text-sm text-gray-600"
-            onClick={() => !saving && onClose()}
-          >
-            Tutup
-          </button>
-        </div>
-        <div className="text-sm text-gray-700 mb-3">{butir.teks}</div>
-        <textarea
-          value={txt}
-          onChange={(e) => setTxt(e.target.value)}
-          rows={8}
-          className="w-full border p-2 rounded"
-        />
-        <div className="flex justify-end gap-2 mt-3">
-          <button
-            onClick={() => !saving && onClose()}
-            className="px-3 py-1 border rounded"
-          >
-            Batal
-          </button>
-          <button
-            onClick={async () => {
-              setSaving(true);
-              try {
-                onSave(txt);
-              } finally {
-                setSaving(false);
-              }
-            }}
-            className="px-3 py-1 bg-sky-600 text-white rounded"
-            disabled={saving}
-          >
-            {saving ? <FaSpinner className="animate-spin" /> : "Simpan"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
 
-/* -------------------------
-   TableEditor component (inline)
-   ------------------------- */
-// Ini sudah benar dari perbaikan sebelumnya
-function TableEditor({ sampleId, klausulCode, tables = [], onChange }) {
-  const [local, setLocal] = useState(() =>
-    (tables || []).map((t) => ({ ...t }))
-  );
-  const [editingIndex, setEditingIndex] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setLocal((tables || []).map((t) => ({ ...t })));
-  }, [tables]);
-
-  function setAndNotify(next) {
-    setLocal(next);
-    onChange && onChange(next);
-  }
-
-  function addEmptyTable() {
-    const t = {
-      id: "tbl-" + Math.random().toString(36).slice(2, 9),
-      title: "",
-      headers: ["Col 1", "Col 2"],
-      rows: [["", ""]],
-      notes: "",
-    };
-    const next = [...local, t];
-    setAndNotify(next);
-    setEditingIndex(next.length - 1);
-  }
-
-  function removeTable(idx) {
-    if (!window.confirm("Hapus tabel ini?")) return;
-    const next = local.slice();
-    next.splice(idx, 1);
-    setAndNotify(next);
-  }
-
-  function updateCell(tblIdx, rowIdx, colIdx, value) {
-    const next = JSON.parse(JSON.stringify(local));
-    next[tblIdx].rows[rowIdx][colIdx] = value;
-    setAndNotify(next);
-  }
-
-  function addRow(tblIdx) {
-    const next = JSON.parse(JSON.stringify(local));
-    const cols = next[tblIdx].headers.length;
-    next[tblIdx].rows.push(new Array(cols).fill(""));
-    setAndNotify(next);
-  }
-
-  function addColumn(tblIdx) {
-    const next = JSON.parse(JSON.stringify(local));
-    next[tblIdx].headers.push(`Col ${next[tblIdx].headers.length + 1}`);
-    next[tblIdx].rows.forEach((r) => r.push(""));
-    setAndNotify(next);
-  }
-
-  return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between mb-2">
-        <h4 className="font-semibold">Lampiran Tabel</h4>
-        <div className="flex gap-2">
-          <button onClick={addEmptyTable} className="px-2 py-1 border rounded">
-            Tambah Tabel
-          </button>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {local.map((t, ti) => (
-          <div key={t.id} className="border rounded p-3 bg-white">
-            <div className="flex justify-between items-start">
-              <input
-                value={t.title}
-                onChange={(e) => {
-                  const n = JSON.parse(JSON.stringify(local));
-                  n[ti].title = e.target.value;
-                  setAndNotify(n);
-                }}
-                placeholder="Judul Tabel"
-                className="w-2/3 border px-2 py-1 rounded"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() =>
-                    setEditingIndex(editingIndex === ti ? null : ti)
-                  }
-                  className="px-2 py-1 border rounded"
-                >
-                  {editingIndex === ti ? "Selesai" : "Edit"}
-                </button>
-                <button
-                  onClick={() => removeTable(ti)}
-                  className="px-2 py-1 border rounded text-red-600"
-                >
-                  Hapus
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-auto mt-3">
-              <table className="min-w-full border-collapse">
-                <thead>
-                  <tr>
-                    {t.headers.map((h, hi) => (
-                      <th key={hi} className="border px-2 py-1 text-left">
-                        {editingIndex === ti ? (
-                          <input
-                            value={h}
-                            onChange={(e) => {
-                              const n = JSON.parse(JSON.stringify(local));
-                              n[ti].headers[hi] = e.target.value;
-                              setAndNotify(n);
-                            }}
-                            className="px-1 py-0.5 border rounded"
-                          />
-                        ) : (
-                          h
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {t.rows.map((r, ri) => (
-                    <tr key={ri}>
-                      {r.map((cell, ci) => (
-                        <td key={ci} className="border px-2 py-1">
-                          {editingIndex === ti ? (
-                            <input
-                              value={cell}
-                              onChange={(e) =>
-                                updateCell(ti, ri, ci, e.target.value)
-                              }
-                              className="w-full px-1 py-0.5 border rounded"
-                            />
-                          ) : (
-                            cell
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {editingIndex === ti && (
-              <div className="flex gap-2 mt-2">
-                <button
-                  onClick={() => addRow(ti)}
-                  className="px-2 py-1 border rounded"
-                >
-                  Tambah Baris
-                </button>
-                <button
-                  onClick={() => addColumn(ti)}
-                  className="px-2 py-1 border rounded"
-                >
-                  Tambah Kolom
-                </button>
-              </div>
-            )}
-
-            <textarea
-              value={t.notes || ""}
-              onChange={(e) => {
-                const n = JSON.parse(JSON.stringify(local));
-                n[ti].notes = e.target.value;
-                setAndNotify(n);
-              }}
-              placeholder="Catatan (opsional)"
-              className="w-full mt-2 border rounded p-2"
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------
-   ImageUploader component (inline)
-   ------------------------- */
-// Ini sudah benar dari perbaikan sebelumnya
-function ImageUploader({ sampleId, images = [], onChange, reportId }) {
-  // <-- ADD reportId
-  const [localImgs, setLocalImgs] = useState(images || []);
-  const [uploading, setUploading] = useState(false);
-
-  useEffect(() => setLocalImgs(images || []), [images]);
-
-  async function handleFile(e) {
-    const f = e.target.files[0];
-    if (!f) return;
-    // ... (file type/size checks) ...
-
-    setUploading(true);
-
-    // Use FormData to send the file
-    const formData = new FormData();
-    formData.append("image", f); // 'image' must match router
-
-    try {
-      // Call the new backend endpoint
-      const res = await apiClient.post(
-        `/uploads/report-image/${reportId}`,
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        }
-      );
-
-      // res.data is the new ReportImage object
-      const newImage = res.data;
-      const next = [...localImgs, newImage];
-      setLocalImgs(next);
-      onChange && onChange(next); // Update parent
-      toast.success("Gambar berhasil diunggah");
-    } catch (err) {
-      toast.error("Gagal upload gambar");
-      console.error(err);
-    } finally {
-      setUploading(false);
-    }
-
-    e.target.value = ""; // Clear file input
-  }
-
-  async function removeImage(img) {
-    if (!window.confirm("Hapus gambar ini?")) return;
-
-    try {
-      // Call the new DELETE endpoint
-      await apiClient.delete(`/uploads/image/${img.id}`);
-
-      const next = localImgs.filter((i) => i.id !== img.id);
-      setLocalImgs(next);
-      onChange && onChange(next); // Update parent
-      toast.success("Gambar dihapus");
-    } catch (e) {
-      toast.error("Gagal menghapus gambar");
-      console.error(e);
-      return;
-    }
-  }
-
-  function updateCaption(imgId, caption) {
-    const next = localImgs.map((i) => (i.id === imgId ? { ...i, caption } : i));
-    setLocalImgs(next);
-    onChange && onChange(next);
-  }
-
-  return (
-    <div>
-      <div className="flex items-center gap-2">
-        <label className="px-3 py-1 border rounded cursor-pointer">
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handleFile}
-            className="hidden"
-          />
-          {uploading ? "Mengunggah..." : "Tambah Gambar"}
-        </label>
-        <div className="text-sm text-gray-500">{localImgs.length} gambar</div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-3 gap-3">
-        {localImgs.map((img) => (
-          <div key={img.id} className="border p-2 rounded">
-            <img
-              src={img.url}
-              alt={img.caption || ""}
-              className="w-full h-36 object-contain"
-            />
-            <input
-              value={img.caption || ""}
-              onChange={(e) => updateCaption(img.id, e.target.value)}
-              placeholder="Caption"
-              className="w-full mt-2 border px-2 py-1 rounded"
-            />
-            <div className="flex justify-between mt-2">
-              <button
-                onClick={() => removeImage(img)}
-                className="px-2 py-1 text-red-600 border rounded"
-              >
-                Hapus
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------
-   Helper functions: date-only
-   ------------------------- */
+// ── Date helpers (unchanged) ─────────────────────────────────────────────────
 function formatDateLocal(value) {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const d = new Date(value);
   if (isNaN(d.getTime())) return "";
   const pad = (n) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function toIsoFromDateLocal(dateValue) {
