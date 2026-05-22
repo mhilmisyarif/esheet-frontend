@@ -1,18 +1,26 @@
 // src/components/StatusBadge.jsx
-import React from "react";
+// Updated: removed REJECTED and REVISED, added IN_PROGRESS
 
 export default function StatusBadge({ status }) {
-  const map = {
-    SUBMITTED: "bg-blue-100 text-blue-800",
-    REVISED: "bg-purple-100 text-purple-800", // Distinct color for revised
-    APPROVED: "bg-emerald-100 text-emerald-800",
-    REJECTED: "bg-red-100 text-red-800",
-    DRAFT: "bg-gray-100 text-gray-700",
-  };
-  const cls = map[status] || "bg-gray-100 text-gray-700";
-  return (
-    <span className={`px-3 py-1 rounded-full text-xs font-medium ${cls}`}>
-      {status}
-    </span>
-  );
+    const config = {
+        DRAFT:       { label: 'Draft',       bg: 'bg-gray-100',    text: 'text-gray-600'   },
+        IN_PROGRESS: { label: 'Sedang Diuji', bg: 'bg-blue-100',   text: 'text-blue-700'   },
+        SUBMITTED:   { label: 'Direview',    bg: 'bg-sky-100',     text: 'text-sky-700'    },
+        APPROVED:    { label: 'Disetujui',   bg: 'bg-emerald-100', text: 'text-emerald-800'},
+    };
+
+    // Per-klausul statuses (used in KlausulStatus context)
+    const klausulConfig = {
+        DRAFT:     { label: 'Draft',      bg: 'bg-gray-100',    text: 'text-gray-600'  },
+        SUBMITTED: { label: 'Direview',   bg: 'bg-amber-100',   text: 'text-amber-700' },
+        APPROVED:  { label: 'Disetujui',  bg: 'bg-emerald-100', text: 'text-emerald-800'},
+    };
+
+    const c = config[status] || klausulConfig[status] || { label: status, bg: 'bg-gray-100', text: 'text-gray-500' };
+
+    return (
+        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${c.bg} ${c.text}`}>
+            {c.label}
+        </span>
+    );
 }

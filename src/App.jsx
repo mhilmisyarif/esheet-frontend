@@ -13,6 +13,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import EngineerDashboard from "./pages/EngineerDashboard";
 import DashboardRedirect from "./pages/DashboardRedirect";
 import ManageStandards from "./pages/ManageStandards";
+import DatasheetDetail from "./pages/DatasheetDetail";
+import AppShell from "./components/AppShell";
 
 function Header() {
   const { user, logout } = useAuth();
@@ -51,25 +53,84 @@ function Header() {
   );
 }
 
-export default function App() {
+// Legacy layout — kept for every screen that hasn't been redesigned yet.
+function LegacyLayout({ children }) {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <main className="max-w-6xl mx-auto p-4">
-        <Routes>
-          {/* Public Route */}
-          <Route path="/login" element={<LoginPage />} />
-
-          {/* Protected Routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/" element={<DashboardRedirect />} />
-            <Route path="/create-report" element={<CreateReport />} />
-            <Route path="/orders/:orderId" element={<OrderDetail />} />
-            <Route path="/reports/:sampleId" element={<ReportEditor />} />
-            <Route path="/manage-standards" element={<ManageStandards />} />
-          </Route>
-        </Routes>
-      </main>
+      <main className="max-w-6xl mx-auto p-4">{children}</main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      {/* Public Route — full-screen, no layout chrome */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Protected Routes */}
+      <Route element={<ProtectedRoute />}>
+        {/* Redesigned — uses the E-Datasheet app shell */}
+        <Route
+          path="/technician-dashboard"
+          element={
+            <AppShell>
+              <TechnicianDashboard />
+            </AppShell>
+          }
+        />
+
+        {/* Legacy layout */}
+        <Route
+          path="/"
+          element={<LegacyLayout><DashboardRedirect /></LegacyLayout>}
+        />
+        <Route
+          path="/engineer-dashboard"
+          element={
+            <AppShell crumbs={["Engineer", "Dashboard"]}>
+              <EngineerDashboard />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/create-report"
+          element={
+            <AppShell crumbs={["Technician", "New Datasheet"]}>
+              <CreateReport />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/orders/:orderId"
+          element={<LegacyLayout><OrderDetail /></LegacyLayout>}
+        />
+        <Route
+          path="/datasheet/:sampleId"
+          element={
+            <AppShell crumbs={["Technician", "Dashboard", "Datasheet"]}>
+              <DatasheetDetail />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/reports/:sampleId"
+          element={
+            <AppShell crumbs={["Technician", "Datasheet", "Klausul"]}>
+              <ReportEditor />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/manage-standards"
+          element={
+            <AppShell crumbs={["Engineer", "Manage Standards"]}>
+              <ManageStandards />
+            </AppShell>
+          }
+        />
+      </Route>
+    </Routes>
   );
 }
