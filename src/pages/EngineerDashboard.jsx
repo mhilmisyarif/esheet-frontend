@@ -67,8 +67,10 @@ export default function EngineerDashboard() {
       .get(`/samples?status=${tab}`)
       .then((res) => {
         if (!mounted) return;
+        // API returns { items, total, page, limit }; tolerate bare arrays
+        const list = Array.isArray(res.data) ? res.data : res.data.items || [];
         setRows(
-          res.data.map((s) => ({
+          list.map((s) => ({
             id: s.id,
             reportId: s.Report?.id || null,
             orderNo: s.order?.order_no || "—",
@@ -198,7 +200,64 @@ export default function EngineerDashboard() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
+        {/* Mobile: stacked datasheet cards (table hidden below `nav`) */}
+        <div className="nav:hidden divide-y divide-line-soft">
+          {loading ? (
+            <div className="px-4 py-12 text-center text-sm text-ink-400">
+              Loading datasheets…
+            </div>
+          ) : pageRows.length === 0 ? (
+            <div className="py-12 px-6 text-center">
+              <FiFileText size={48} className="mx-auto text-ink-300 mb-3" />
+              <div className="text-[15px] font-medium text-navy-800 mb-1">
+                {tab === "IN_PROGRESS"
+                  ? "No datasheets awaiting review"
+                  : "No approved datasheets"}
+              </div>
+              <div className="text-sm text-ink-400">
+                {search
+                  ? "Try a different search"
+                  : "Submitted datasheets will appear here"}
+              </div>
+            </div>
+          ) : (
+            pageRows.map((r) => (
+              <div
+                key={`m-${r.id}`}
+                onClick={() => navigate(`/reports/${r.id}`)}
+                className="px-4 py-3.5 flex items-start gap-3 active:bg-navy-50 cursor-pointer"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-navy-800">
+                      {r.sampleName}
+                    </span>
+                    <StatusPill status={r.status} />
+                  </div>
+                  <div className="text-[13px] text-ink-700 mt-0.5">
+                    {r.client} · {fmtDate(r.createdAt)}
+                  </div>
+                  <div className="font-mono text-[11px] text-ink-400 mt-1 truncate">
+                    {r.orderNo}
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openRowMenu(e, r);
+                  }}
+                  aria-label="Aksi datasheet"
+                  className="inline-flex w-11 h-11 -mr-1.5 rounded-lg items-center justify-center text-ink-400 active:bg-navy-100 shrink-0"
+                >
+                  <FiMoreHorizontal size={20} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden nav:block overflow-x-auto">
           <table className="w-full min-w-[820px] border-separate border-spacing-0">
             <thead>
               <tr>

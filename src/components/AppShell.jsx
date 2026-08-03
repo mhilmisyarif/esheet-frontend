@@ -14,18 +14,39 @@ import {
   FiMenu,
 } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext";
+import NotificationBell from "./NotificationBell";
 import logoUrl from "../assets/logo.png";
 import avatarUrl from "../assets/avatar.png";
 
 const TECH_NAV = [
-  { key: "dashboard", label: "Dashboard", Icon: FiGrid, path: "/technician-dashboard" },
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    Icon: FiGrid,
+    path: "/technician-dashboard",
+  },
   { key: "profile", label: "Profile", Icon: FiUser, path: null },
-  { key: "registration", label: "Registration", Icon: FiClipboard, path: "/create-report" },
+  {
+    key: "registration",
+    label: "Registration",
+    Icon: FiClipboard,
+    path: "/create-report",
+  },
 ];
 
 const ENGINEER_NAV = [
-  { key: "dashboard", label: "Dashboard", Icon: FiGrid, path: "/engineer-dashboard" },
-  { key: "standards", label: "Manage Standards", Icon: FiBookOpen, path: "/manage-standards" },
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    Icon: FiGrid,
+    path: "/engineer-dashboard",
+  },
+  {
+    key: "standards",
+    label: "Manage Standards",
+    Icon: FiBookOpen,
+    path: "/manage-standards",
+  },
   { key: "profile", label: "Profile", Icon: FiUser, path: null },
 ];
 
@@ -34,7 +55,7 @@ function titleCase(s) {
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 }
 
-function Sidebar({ navOpen, onClose, nav }) {
+function Sidebar({ navOpen, onClose, nav, deskCollapsed }) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -57,7 +78,11 @@ function Sidebar({ navOpen, onClose, nav }) {
             ? "translate-x-0 shadow-[12px_0_36px_rgba(7,25,63,0.18)]"
             : "-translate-x-full"
         }
-        nav:sticky nav:top-0 nav:h-screen nav:w-[264px] nav:translate-x-0 nav:shadow-none`}
+        ${
+          deskCollapsed
+            ? "nav:hidden"
+            : "nav:sticky nav:top-0 nav:h-screen nav:w-[264px] nav:translate-x-0 nav:shadow-none nav:flex"
+        }`}
     >
       <button
         onClick={onClose}
@@ -101,8 +126,8 @@ function Sidebar({ navOpen, onClose, nav }) {
       </nav>
 
       <div className="flex items-center justify-between px-4 py-4 border-t border-line text-xs text-ink-400">
-        <span>v2.4.1</span>
-        <span>&copy; SERCO Lab</span>
+        <span>va.0.0.1</span>
+        <span>&copy; SBU Lab - Lab Teknik</span>
       </div>
     </aside>
   );
@@ -128,10 +153,12 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
   return (
     <header className="h-[68px] nav:h-20 px-4 nav:px-8 bg-paper border-b border-line flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-4 min-w-0">
+        {/* Hamburger: opens the drawer on mobile, collapses/expands the
+            sidebar on desktop — always visible. */}
         <button
           onClick={onOpenMenu}
-          aria-label="Open menu"
-          className="nav:hidden w-11 h-11 rounded-xl flex items-center justify-center text-navy-800 hover:bg-navy-50 shrink-0"
+          aria-label="Toggle menu"
+          className="w-11 h-11 rounded-xl flex items-center justify-center text-navy-800 hover:bg-navy-50 shrink-0"
         >
           <FiMenu size={22} />
         </button>
@@ -142,7 +169,9 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
             return (
               <span key={i} className="flex items-center gap-2">
                 {i > 0 && (
-                  <span className={`text-ink-300 ${isMid ? "hidden nav:inline" : ""}`}>
+                  <span
+                    className={`text-ink-300 ${isMid ? "hidden nav:inline" : ""}`}
+                  >
                     /
                   </span>
                 )}
@@ -157,16 +186,13 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0" ref={ref}>
-        <button
-          title="Notifications"
-          className="relative w-11 h-11 rounded-full flex items-center justify-center text-navy-700 hover:bg-navy-50"
-        >
-          <FiBell size={22} />
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-bad-fg border-2 border-paper" />
-        </button>
+      <div className="flex items-center gap-2 shrink-0">
+        <NotificationBell />
 
-        <div className="relative">
+        {/* ref hanya membungkus area profil — kalau membungkus bell juga,
+            klik bell tidak menutup dropdown profil (dua dropdown tumpang
+            tindih terbuka bersamaan) */}
+        <div className="relative" ref={ref}>
           <button
             onClick={() => setPdOpen((o) => !o)}
             className="flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-full hover:bg-navy-50"
@@ -180,7 +206,9 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
               <div className="text-[15px] font-medium text-navy-800 leading-tight">
                 {name}
               </div>
-              <div className="text-xs text-ink-400 leading-tight mt-0.5">{role}</div>
+              <div className="text-xs text-ink-400 leading-tight mt-0.5">
+                {role}
+              </div>
             </div>
             <FiChevronDown
               size={16}
@@ -288,11 +316,29 @@ function LogoutConfirm({ onCancel, onConfirm }) {
   );
 }
 
-export default function AppShell({ children, crumbs = ["Technician", "Dashboard"] }) {
+export default function AppShell({
+  children,
+  crumbs = ["Technician", "Dashboard"],
+}) {
   const [navOpen, setNavOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
+  // Desktop sidebar collapse — persisted so the preference survives reloads
+  const [deskCollapsed, setDeskCollapsed] = useState(
+    () => localStorage.getItem("sidebar-collapsed") === "1",
+  );
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const toggleMenu = () => {
+    if (window.matchMedia("(min-width: 960px)").matches) {
+      setDeskCollapsed((v) => {
+        localStorage.setItem("sidebar-collapsed", v ? "0" : "1");
+        return !v;
+      });
+    } else {
+      setNavOpen(true);
+    }
+  };
 
   const isEngineerSide =
     user?.role === "ENGINEER" ||
@@ -315,8 +361,17 @@ export default function AppShell({ children, crumbs = ["Technician", "Dashboard"
   };
 
   return (
-    <div className="min-h-screen bg-canvas grid nav:grid-cols-[264px_1fr]">
-      <Sidebar nav={nav} navOpen={navOpen} onClose={() => setNavOpen(false)} />
+    <div
+      className={`min-h-screen bg-canvas grid ${
+        deskCollapsed ? "nav:grid-cols-[1fr]" : "nav:grid-cols-[264px_1fr]"
+      }`}
+    >
+      <Sidebar
+        nav={nav}
+        navOpen={navOpen}
+        onClose={() => setNavOpen(false)}
+        deskCollapsed={deskCollapsed}
+      />
 
       {navOpen && (
         <div
@@ -328,7 +383,7 @@ export default function AppShell({ children, crumbs = ["Technician", "Dashboard"
       <div className="min-w-0 flex flex-col">
         <Topbar
           crumbs={crumbs}
-          onOpenMenu={() => setNavOpen(true)}
+          onOpenMenu={toggleMenu}
           onRequestLogout={() => setShowLogout(true)}
         />
         <main className="w-full max-w-[1400px] px-4 pt-5 pb-12 nav:px-10 nav:pt-8 nav:pb-16">

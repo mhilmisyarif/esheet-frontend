@@ -381,7 +381,19 @@ export default function ReportEditor() {
           reportData={report.data}
           klausulStatuses={klausulStatuses}
           userRole={user?.role}
-          onStatusChange={(newStatuses) => setKlausulStatuses(newStatuses)}
+          onStatusChange={(newStatuses) => {
+            setKlausulStatuses(newStatuses);
+            // When every klausul is APPROVED the backend auto-locks the
+            // report. Mirror that here so flushAutosave stops PATCHing a
+            // locked report (it would get 403 otherwise).
+            const codes = report.data.map((k) => k.klausul);
+            const allApproved =
+              codes.length > 0 &&
+              codes.every((c) => newStatuses[c]?.status === "APPROVED");
+            if (allApproved) {
+              setReport((prev) => ({ ...prev, status: "APPROVED" }));
+            }
+          }}
           onBeforeApprove={async () => {
             if (flushRef.current) await flushRef.current();
           }}

@@ -46,6 +46,16 @@ const LAYOUT_OPTIONS = [
 ];
 
 const INPUT_TYPES = ["text", "number", "dropdown"];
+// Sub-clause titles can run to hundreds of characters. A native <select>
+// popup is sized by its longest option and cannot be constrained with CSS,
+// so the label itself must be truncated or the dropdown overflows the screen.
+const clauseLabel = (s, max = 60) => {
+  const judul = (s.judul || "").trim();
+  if (!judul) return s.kode;
+  const short = judul.length > max ? `${judul.slice(0, max).trimEnd()}…` : judul;
+  return `${s.kode} — ${short}`;
+};
+
 const FORMULA_OPS = [
   { value: "subtract", label: "A − B (subtract)" },
   { value: "add", label: "A + B (add)" },
@@ -394,12 +404,12 @@ export default function TemplateBuilder({ standardId, subClauses = [], onClose }
           <select
             value={filterClause}
             onChange={(e) => setFilterClause(e.target.value)}
-            className={inpBase}
+            className={`${inpBase} max-w-full sm:max-w-[360px] truncate`}
           >
             <option value="">Semua sub-klausul</option>
             {subClauses.map((s) => (
-              <option key={s.kode} value={s.kode}>
-                {s.kode} — {s.judul || ""}
+              <option key={s.kode} value={s.kode} title={s.judul || s.kode}>
+                {clauseLabel(s)}
               </option>
             ))}
           </select>
@@ -513,13 +523,12 @@ function TemplateEditor({
             onChange={(e) =>
               onChange((p) => ({ ...p, subClauseCode: e.target.value }))
             }
-            className={inp}
+            className={`${inp} truncate`}
           >
             <option value="">-- Pilih --</option>
             {subClauses.map((s) => (
-              <option key={s.kode} value={s.kode}>
-                {s.kode}
-                {s.judul ? ` — ${s.judul}` : ""}
+              <option key={s.kode} value={s.kode} title={s.judul || s.kode}>
+                {clauseLabel(s)}
               </option>
             ))}
           </select>
@@ -1003,6 +1012,9 @@ function TableSectionEditor({
 function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
   const otherCols = columns.filter((c) => c.id !== col.id && !c.isResult);
   const hasFormula = !!col.formula;
+  const isAggregate = hasFormula && Array.isArray(col.formula.cols);
+
+  const setFormula = (f) => updateColumn(sIdx, cIdx, "formula", f);
 
   return (
     <div className="border border-warn-fg/20 rounded-lg p-2.5 bg-warn-bg/50">
@@ -1012,78 +1024,122 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
           className="accent-warn-fg"
           checked={hasFormula}
           onChange={(e) =>
-            updateColumn(
-              sIdx,
-              cIdx,
-              "formula",
+            setFormula(
               e.target.checked
-                ? {
-                    op: "subtract",
-                    a: otherCols[0]?.id || "",
-                    b: otherCols[1]?.id || "",
-                  }
+                ? { op: "subtract", a: otherCols[0]?.id || "", b: otherCols[1]?.id || "" }
                 : null
             )
           }
         />
         Kolom dihitung otomatis (formula)
       </label>
+
       {hasFormula && col.formula && (
-        <div className="grid grid-cols-3 gap-1.5 items-center">
-          <select
-            value={col.formula.a}
-            onChange={(e) =>
-              updateColumn(sIdx, cIdx, "formula", {
-                ...col.formula,
-                a: e.target.value,
-              })
-            }
-            className={inpXs}
-          >
-            {otherCols.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.header}
-              </option>
-            ))}
-          </select>
-          <select
-            value={col.formula.op}
-            onChange={(e) =>
-              updateColumn(sIdx, cIdx, "formula", {
-                ...col.formula,
-                op: e.target.value,
-              })
-            }
-            className={inpXs}
-          >
-            {FORMULA_OPS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={col.formula.b}
-            onChange={(e) =>
-              updateColumn(sIdx, cIdx, "formula", {
-                ...col.formula,
-                b: e.target.value,
-              })
-            }
-            className={inpXs}
-          >
-            {otherCols.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.header}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {hasFormula && col.formula && (
-        <p className="text-[10px] text-warn-fg mt-1.5">
-          Preview: {formulaToString(col.formula, columns)}
-        </p>
+        <>
+          {/* Mode: binary (2 kolom) vs aggregate (rata-rata / jumlah N kolom) */}
+          <div className="flex gap-1.5 mb-2">
+            <button
+              type="button"
+              onClick={() =>
+                isAggregate &&
+                setFormula({ op: "subtract", a: otherCols[0]?.id || "", b: otherCols[1]?.id || "" })
+              }
+              className={`px-2 py-1 rounded text-[11px] font-semibold ${
+                !isAggregate ? "bg-warn-fg text-white" : "bg-white text-warn-fg border border-warn-fg/30"
+              }`}
+            >
+              2 kolom (± × ÷)
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                !isAggregate &&
+                setFormula({ op: "average", cols: otherCols.slice(0, 2).map((c) => c.id) })
+              }
+              className={`px-2 py-1 rounded text-[11px] font-semibold ${
+                isAggregate ? "bg-warn-fg text-white" : "bg-white text-warn-fg border border-warn-fg/30"
+              }`}
+            >
+              Rata-rata / Jumlah
+            </button>
+          </div>
+
+          {isAggregate ? (
+            <div>
+              <div className="flex gap-1.5 mb-2">
+                <select
+                  value={col.formula.op}
+                  onChange={(e) => setFormula({ ...col.formula, op: e.target.value })}
+                  className={inpXs}
+                >
+                  <option value="average">Rata-rata</option>
+                  <option value="sum">Jumlah</option>
+                </select>
+              </div>
+              <p className={`${lbl} mb-1`}>Kolom sumber (pilih beberapa):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {otherCols.map((c) => {
+                  const checked = col.formula.cols.includes(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer border ${
+                        checked ? "bg-warn-bg border-warn-fg/40 text-warn-fg" : "bg-white border-line text-ink-500"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="accent-warn-fg"
+                        checked={checked}
+                        onChange={(e) => {
+                          const cols = e.target.checked
+                            ? [...col.formula.cols, c.id]
+                            : col.formula.cols.filter((id) => id !== c.id);
+                          setFormula({ ...col.formula, cols });
+                        }}
+                      />
+                      {c.header}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-1.5 items-center">
+              <select
+                value={col.formula.a}
+                onChange={(e) => setFormula({ ...col.formula, a: e.target.value })}
+                className={inpXs}
+              >
+                {otherCols.map((c) => (
+                  <option key={c.id} value={c.id}>{c.header}</option>
+                ))}
+              </select>
+              <select
+                value={col.formula.op}
+                onChange={(e) => setFormula({ ...col.formula, op: e.target.value })}
+                className={inpXs}
+              >
+                {FORMULA_OPS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <select
+                value={col.formula.b}
+                onChange={(e) => setFormula({ ...col.formula, b: e.target.value })}
+                className={inpXs}
+              >
+                {otherCols.map((c) => (
+                  <option key={c.id} value={c.id}>{c.header}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <p className="text-[10px] text-warn-fg mt-1.5">
+            Preview: {formulaToString(col.formula, columns)}
+          </p>
+        </>
       )}
     </div>
   );

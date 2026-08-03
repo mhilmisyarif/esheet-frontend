@@ -374,7 +374,10 @@ function KvSectionRenderer({ section, sData, canEdit, onKvChange }) {
           {section.label}
         </p>
       )}
-      <table className="w-full border-collapse text-sm">
+      {/* overflow-x-auto: label + input + result selector dapat melebihi
+          lebar layar HP — biarkan scroll di dalam, bukan meluber keluar */}
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-[400px] border-collapse text-sm">
         <tbody>
           {(section.rows || []).map((row) => {
             const rowData = kv[row.id] || {};
@@ -415,6 +418,7 @@ function KvSectionRenderer({ section, sData, canEdit, onKvChange }) {
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

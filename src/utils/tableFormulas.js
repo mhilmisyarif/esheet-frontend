@@ -25,25 +25,38 @@ export function resolveComputedCells(cells, columns) {
     // Two-pass: first resolve formulas, then resolve result columns
     // (result may depend on a formula column)
 
-    // Pass 1 — formula columns
+    // Pass 1 — formula columns.
+    // Two shapes: binary { op, a, b } and aggregate { op, cols: [...] }.
+    // (Keep in sync with esheet-backend/src/lib/tableResolve.js)
     columns.forEach(col => {
         if (!col.formula || col.editable) return;
-
-        const a = numVal(col.formula.a);
-        const b = numVal(col.formula.b);
-
-        if (a === null || b === null) {
-            resolved[col.id] = '';
-            return;
-        }
+        const f = col.formula;
 
         let result = null;
-        switch (col.formula.op) {
-            case 'add': result = a + b; break;
-            case 'subtract': result = a - b; break;
-            case 'multiply': result = a * b; break;
-            case 'divide': result = b !== 0 ? a / b : null; break;
-            default: result = null;
+
+        if (Array.isArray(f.cols)) {
+            // Aggregate over N columns, ignoring empty/non-numeric cells
+            const nums = f.cols.map(numVal).filter(n => n !== null);
+            if (nums.length === 0) {
+                resolved[col.id] = '';
+                return;
+            }
+            const total = nums.reduce((s, n) => s + n, 0);
+            result = f.op === 'sum' ? total : total / nums.length; // default: average
+        } else {
+            const a = numVal(f.a);
+            const b = numVal(f.b);
+            if (a === null || b === null) {
+                resolved[col.id] = '';
+                return;
+            }
+            switch (f.op) {
+                case 'add': result = a + b; break;
+                case 'subtract': result = a - b; break;
+                case 'multiply': result = a * b; break;
+                case 'divide': result = b !== 0 ? a / b : null; break;
+                default: result = null;
+            }
         }
 
         resolved[col.id] = result !== null ? parseFloat(result.toFixed(4)) : '';
@@ -102,6 +115,10 @@ export function formulaToString(formula, columns) {
         const col = columns.find(c => c.id === id);
         return col ? col.header : id;
     };
+    if (Array.isArray(formula.cols)) {
+        const fn = formula.op === 'sum' ? 'JUMLAH' : 'RATA2';
+        return `${fn}(${formula.cols.map(colLabel).join(', ')})`;
+    }
     const opSymbol = {
         add: '+',
         subtract: '−',

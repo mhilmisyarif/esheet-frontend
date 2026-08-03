@@ -59,7 +59,7 @@ function fmtDate(d) {
   }
 }
 
-function InfoRow({ label, value, mono, editing, onChange, placeholder }) {
+function InfoRow({ label, value, mono, editing, onChange, placeholder, type }) {
   const isEdit = editing && typeof onChange === "function";
   return (
     <div className="grid grid-cols-1 nav:grid-cols-[180px_1fr] gap-1 nav:gap-4 py-3.5 border-b border-line-soft last:border-b-0 nav:items-center">
@@ -67,6 +67,7 @@ function InfoRow({ label, value, mono, editing, onChange, placeholder }) {
       <dd>
         {isEdit ? (
           <input
+            type={type || "text"}
             value={value || ""}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
@@ -75,7 +76,7 @@ function InfoRow({ label, value, mono, editing, onChange, placeholder }) {
         ) : (
           <span
             className={`text-sm font-medium text-navy-800 ${
-              mono ? "font-mono text-[13px]" : ""
+              mono ? "font-mono text-[13px] break-all" : "break-words"
             }`}
           >
             {value || <span className="text-ink-300">—</span>}
@@ -305,6 +306,9 @@ export default function DatasheetDetail() {
       factory_address: sample.factory_address || "",
       country_origin: sample.country_origin || "",
       iwo_no: sample.iwo_no || "",
+      received_date: sample.received_date
+        ? sample.received_date.slice(0, 10)
+        : "",
     });
     setEditing(true);
   };
@@ -375,7 +379,9 @@ export default function DatasheetDetail() {
       {/* Detail head */}
       <div className="flex flex-col gap-4 nav:flex-row nav:justify-between nav:items-start bg-paper border border-line rounded-2xl shadow-card p-5 nav:p-6">
         <div className="min-w-0">
-          <div className="font-mono text-[13px] text-ink-400">
+          {/* break-all: nomor order mono panjang tanpa spasi harus bisa
+              patah di layar sempit, bukan meluber keluar viewport */}
+          <div className="font-mono text-[13px] text-ink-400 break-all">
             Datasheet · {order.order_no || sample.id}
           </div>
           <h1 className="text-2xl font-semibold text-navy-800 mt-1 tracking-[-0.01em]">
@@ -496,6 +502,37 @@ export default function DatasheetDetail() {
           <InfoRow
             label="IWO No."
             {...editField("iwo_no", sample.iwo_no, "Nomor IWO")}
+          />
+          <InfoRow
+            label="Tanggal Terima Sampel"
+            type="date"
+            {...editField(
+              "received_date",
+              fmtDate(sample.received_date),
+              "",
+            )}
+          />
+          <InfoRow
+            label="Tanggal Pengujian"
+            value={(() => {
+              // Range of the per-klausul "Tanggal Uji" the technician filled
+              const start = report?.test_period_start;
+              const end = report?.test_period_end;
+              if (start) {
+                return start === end || !end
+                  ? fmtDate(start)
+                  : `${fmtDate(start)} — ${fmtDate(end)}`;
+              }
+              // Fallback: activity timestamps (older reports / not yet filled)
+              if (report?.test_started_at) {
+                return `${fmtDate(report.test_started_at)}${
+                  report.test_finished_at
+                    ? ` — ${fmtDate(report.test_finished_at)}`
+                    : " — sedang berlangsung"
+                }`;
+              }
+              return null;
+            })()}
           />
           <InfoRow label="Testing type" value={report?.testing_type} />
         </dl>
