@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import {
   FiSearch,
   FiPlus,
+  FiCamera,
   FiChevronDown,
   FiChevronLeft,
   FiChevronRight,
@@ -13,6 +14,7 @@ import {
   FiTrash2,
 } from "react-icons/fi";
 import apiClient from "../api";
+import BarcodeScanModal from "../components/BarcodeScanModal";
 
 const MONTHS = [
   "January",
@@ -117,6 +119,7 @@ export default function TechnicianDashboard() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [menu, setMenu] = useState(null); // row-action menu: { row, top, left }
+  const [scanOpen, setScanOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -124,7 +127,9 @@ export default function TechnicianDashboard() {
       .get("/samples")
       .then((res) => {
         if (!mounted) return;
-        const mapped = res.data.map((s) => ({
+        // API returns { items, total, page, limit }; tolerate bare arrays
+        const list = Array.isArray(res.data) ? res.data : res.data.items || [];
+        const mapped = list.map((s) => ({
           id: s.id,
           reportId: s.Report?.id || null,
           orderNo: s.order?.order_no || "—",
@@ -303,6 +308,12 @@ export default function TechnicianDashboard() {
               />
             </div>
             <button
+              onClick={() => setScanOpen(true)}
+              className="inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-paper text-navy-800 border border-line hover:bg-navy-50 transition-colors whitespace-nowrap"
+            >
+              <FiCamera size={17} /> Scan
+            </button>
+            <button
               onClick={() => navigate("/create-report")}
               className="inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-paper text-navy-800 border-[1.5px] border-navy-800 hover:bg-navy-50 transition-colors whitespace-nowrap"
             >
@@ -311,8 +322,60 @@ export default function TechnicianDashboard() {
           </div>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
+        {/* Mobile: stacked datasheet cards (table hidden below `nav`) */}
+        <div className="nav:hidden divide-y divide-line-soft">
+          {loading ? (
+            <div className="px-4 py-12 text-center text-sm text-ink-400">
+              Loading datasheets…
+            </div>
+          ) : pageRows.length === 0 ? (
+            <div className="py-12 px-6 text-center">
+              <FiFileText size={48} className="mx-auto text-ink-300 mb-3" />
+              <div className="text-[15px] font-medium text-navy-800 mb-1">
+                No datasheets match your filters
+              </div>
+              <div className="text-sm text-ink-400">
+                Try changing the status or search
+              </div>
+            </div>
+          ) : (
+            pageRows.map((r) => (
+              <div
+                key={`m-${r.id}`}
+                onClick={() => navigate(`/datasheet/${r.id}`)}
+                className="px-4 py-3.5 flex items-start gap-3 active:bg-navy-50 cursor-pointer"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-navy-800">
+                      {r.sampleName}
+                    </span>
+                    <StatusPill status={r.status} />
+                  </div>
+                  <div className="text-[13px] text-ink-700 mt-0.5">
+                    {r.brandModel} · {r.client}
+                  </div>
+                  <div className="font-mono text-[11px] text-ink-400 mt-1 truncate">
+                    {r.orderNo}
+                  </div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openRowMenu(e, r);
+                  }}
+                  aria-label="Aksi datasheet"
+                  className="inline-flex w-11 h-11 -mr-1.5 rounded-lg items-center justify-center text-ink-400 active:bg-navy-100 shrink-0"
+                >
+                  <FiMoreHorizontal size={20} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden nav:block overflow-x-auto">
           <table className="w-full min-w-[760px] border-separate border-spacing-0">
             <thead>
               <tr>
@@ -487,6 +550,8 @@ export default function TechnicianDashboard() {
           </div>
         </>
       )}
+
+      <BarcodeScanModal open={scanOpen} onClose={() => setScanOpen(false)} />
     </div>
   );
 }

@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# HTTPS dev certificates (mkcert) — never commit private keys
+certs/
+
+# Environment files (only commit .env.example)
+.env
+.env.production

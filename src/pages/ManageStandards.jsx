@@ -37,6 +37,7 @@ export default function ManageStandards() {
   const [editingId, setEditingId] = useState(null);
   const [name, setName] = useState("");
   const [standardNumbers, setStandardNumbers] = useState([""]);
+  const [formCode, setFormCode] = useState("");
   const [labId, setLabId] = useState("");
   const [jsonFile, setJsonFile] = useState(null);
   const [clauses, setClauses] = useState([]);
@@ -91,8 +92,9 @@ export default function ManageStandards() {
     setName(standard.name);
     setLabId(standard.labId);
     setStandardNumbers(
-      standard.standard_numbers?.length > 0 ? standard.standard_numbers : [""]
+      standard.standard_numbers?.length > 0 ? standard.standard_numbers : [""],
     );
+    setFormCode(standard.form_code || "");
     if (standard.template_data && Array.isArray(standard.template_data)) {
       setClauses(standard.template_data);
       setActiveTab("BUILDER");
@@ -109,6 +111,7 @@ export default function ManageStandards() {
     setClauses([]);
     setJsonFile(null);
     setStandardNumbers([""]);
+    setFormCode("");
     setActiveTab("BUILDER");
   };
 
@@ -135,6 +138,7 @@ export default function ManageStandards() {
         name,
         labId,
         standard_numbers: standardNumbers.filter((n) => n.trim() !== ""),
+        form_code: formCode.trim() || null,
         template_data: finalJson,
       };
       if (editingId) {
@@ -150,6 +154,7 @@ export default function ManageStandards() {
       setJsonFile(null);
       setClauses([]);
       setStandardNumbers([""]);
+      setFormCode("");
       fetchData();
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to save");
@@ -266,7 +271,9 @@ export default function ManageStandards() {
         >
           <div className="flex items-center justify-between gap-3 p-4 nav:py-5 nav:px-6 border-b border-line-soft">
             <h2 className="text-lg font-semibold text-navy-800 truncate">
-              {editingId ? `Editing: ${name || "Standard"}` : "Create New Standard"}
+              {editingId
+                ? `Editing: ${name || "Standard"}`
+                : "Create New Standard"}
             </h2>
             {editingId && (
               <button
@@ -339,6 +346,21 @@ export default function ManageStandards() {
               </select>
             </div>
 
+            <div>
+              <label className={label}>
+                PO Code{" "}
+                <span className="normal-case font-normal text-ink-400">
+                  — nomor formulir di footer PDF datasheet
+                </span>
+              </label>
+              <input
+                className={input}
+                value={formCode}
+                onChange={(e) => setFormCode(e.target.value)}
+                placeholder="e.g. FOR-LAB-CHY-09"
+              />
+            </div>
+
             {/* Tabs */}
             <div className="flex gap-1 border-b border-line-soft -mb-1">
               {TABS.map((tab) => (
@@ -405,7 +427,7 @@ export default function ManageStandards() {
                                   cIdx,
                                   sIdx,
                                   "kode",
-                                  e.target.value
+                                  e.target.value,
                                 )
                               }
                             />
@@ -418,7 +440,7 @@ export default function ManageStandards() {
                                   cIdx,
                                   sIdx,
                                   "judul",
-                                  e.target.value
+                                  e.target.value,
                                 )
                               }
                             />
@@ -432,7 +454,10 @@ export default function ManageStandards() {
 
                           <div className="mt-2.5 flex flex-col gap-2">
                             {sub.butir.map((butir, bIdx) => (
-                              <div key={bIdx} className="flex gap-2 items-start">
+                              <div
+                                key={bIdx}
+                                className="flex gap-2 items-start"
+                              >
                                 <input
                                   placeholder="a)"
                                   className={`${inputSm} w-14 shrink-0 text-center font-mono`}
@@ -443,7 +468,7 @@ export default function ManageStandards() {
                                       sIdx,
                                       bIdx,
                                       "kode",
-                                      e.target.value
+                                      e.target.value,
                                     )
                                   }
                                 />
@@ -458,7 +483,7 @@ export default function ManageStandards() {
                                       sIdx,
                                       bIdx,
                                       "teks",
-                                      e.target.value
+                                      e.target.value,
                                     )
                                   }
                                 />
@@ -534,8 +559,8 @@ export default function ManageStandards() {
                   {isLoading
                     ? "Saving…"
                     : editingId
-                    ? "Update Standard"
-                    : "Create Standard"}
+                      ? "Update Standard"
+                      : "Create Standard"}
                 </button>
               </div>
             )}
@@ -599,7 +624,9 @@ export default function ManageStandards() {
                             )}
                             <div className="text-[11px] text-ink-300 mt-0.5">
                               Edited:{" "}
-                              {new Date(s.updatedAt).toLocaleDateString("id-ID")}
+                              {new Date(s.updatedAt).toLocaleDateString(
+                                "id-ID",
+                              )}
                             </div>
                           </div>
                           <div className="flex gap-1 shrink-0">

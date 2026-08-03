@@ -49,6 +49,13 @@
   --breakpoint-nav: 960px;
 }
 
+html {
+  /* Safety net against horizontal overflow on small screens.
+     `clip` (bukan `hidden`) tidak membuat scroll-container baru,
+     jadi position: sticky di topbar/sidebar tetap bekerja. */
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);

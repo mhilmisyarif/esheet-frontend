@@ -1,6 +1,7 @@
 // src/pages/CreateReport.jsx
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { parseOrderNo } from "../utils/orderParser";
 import toast from "react-hot-toast";
 import {
   FiArrowLeft,
@@ -28,6 +29,7 @@ function TextField({
   hint,
   optional,
   multiline,
+  type = "text",
 }) {
   const cls = `${inputBase} text-navy-800 ${inputState(error)}`;
   return (
@@ -48,6 +50,7 @@ function TextField({
         />
       ) : (
         <input
+          type={type}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -91,12 +94,17 @@ const btnGhost =
 
 export default function CreateReport() {
   const navigate = useNavigate();
+  // Barcode-scan flow prefills the order number via ?order_no=…
+  // (BarcodeScanModal navigates here when a scanned code has no datasheet)
+  const [searchParams] = useSearchParams();
   const [labs, setLabs] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState(1);
 
   // Form state
-  const [orderNo, setOrderNo] = useState("");
+  const [orderNo, setOrderNo] = useState(
+    () => searchParams.get("order_no") || "",
+  );
   const [applicant, setApplicant] = useState("");
   const [applicantAddress, setApplicantAddress] = useState("");
   const [brand, setBrand] = useState("");
@@ -105,6 +113,7 @@ export default function CreateReport() {
   const [factoryAddress, setFactoryAddress] = useState("");
   const [countryOrigin, setCountryOrigin] = useState("");
   const [iwoNo, setIwoNo] = useState("");
+  const [receivedDate, setReceivedDate] = useState("");
   const [selectedStandardId, setSelectedStandardId] = useState("");
   const [testingType, setTestingType] = useState("FULL");
   const [selectedClauses, setSelectedClauses] = useState([]);
@@ -176,6 +185,7 @@ export default function CreateReport() {
         factory_address: factoryAddress,
         country_origin: countryOrigin,
         iwo_no: iwoNo,
+        received_date: receivedDate || null,
         selectedClauses: testingType === "VERIFICATION" ? selectedClauses : [],
       };
       const response = await apiClient.post(
@@ -244,6 +254,35 @@ export default function CreateReport() {
                       No lab matched — check the order number format.
                     </div>
                   ))}
+
+                {/* Full auto-detected breakdown of the order number */}
+                {(() => {
+                  const p = parseOrderNo(orderNo);
+                  if (!p) return null;
+                  const chips = [
+                    ["No. Lab", p.labNoShort],
+                    ["Bulan", `${p.monthName} (${p.month})`],
+                    ["Tahun", p.year],
+                    ["Sampel ke-", p.sampleSeq],
+                  ];
+                  return (
+                    <div className="flex flex-wrap gap-1.5 mt-0.5">
+                      {chips.map(([label, value]) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-navy-50 border border-navy-100 text-[12px]"
+                        >
+                          <span className="text-ink-400 font-medium">
+                            {label}
+                          </span>
+                          <span className="font-semibold text-navy-800">
+                            {value}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               <SelectField
@@ -376,6 +415,16 @@ export default function CreateReport() {
                   value={iwoNo}
                   onChange={setIwoNo}
                   placeholder="Internal work order"
+                  optional
+                />
+              </div>
+              <div className="grid grid-cols-1 nav:grid-cols-2 gap-[18px]">
+                <TextField
+                  label="Tanggal Terima Sampel"
+                  type="date"
+                  value={receivedDate}
+                  onChange={setReceivedDate}
+                  hint="Tanggal sampel diterima laboratorium"
                   optional
                 />
               </div>

@@ -88,7 +88,7 @@ export default function LoginPage() {
         </div>
 
         <div className="text-center text-xs text-navy-200 mt-5">
-          E-Datasheet v2.4.1 &middot; &copy; SERCO Lab
+          E-Datasheet v.a.0.0.1 &middot; &copy; SBU Lab - Lab Teknik
         </div>
       </div>
     </div>
