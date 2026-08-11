@@ -14,19 +14,18 @@ import {
   FiChevronDown,
   FiChevronRight,
   FiColumns,
+  FiUploadCloud,
+  FiFileText,
 } from "react-icons/fi";
 import TemplateBuilder from "../components/TemplateBuilder";
 
 const input =
   "w-full px-3.5 py-2.5 border border-line rounded-lg text-sm text-navy-800 bg-paper outline-none transition-colors focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/[0.12] placeholder:text-ink-400";
-// NOTE: no w-full here — callers set width via w-16 / w-24 / flex-1 etc.
 const inputSm =
   "px-2.5 py-1.5 border border-line rounded-lg text-[13px] text-navy-800 bg-paper outline-none transition-colors focus:border-navy-600 focus:ring-2 focus:ring-navy-600/10 placeholder:text-ink-400";
 const label = "block text-[13px] font-medium text-navy-800 mb-1.5";
 const btnPrimary =
   "inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-navy-800 text-white hover:bg-navy-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
-const btnGhostSm =
-  "inline-flex items-center justify-center gap-1.5 h-9 px-3.5 rounded-lg text-[13px] font-semibold bg-paper text-navy-800 border border-line hover:bg-navy-50 transition-colors";
 const iconBtn =
   "w-8 h-8 rounded-lg inline-flex items-center justify-center transition-colors shrink-0";
 
@@ -40,6 +39,8 @@ export default function ManageStandards() {
   const [formCode, setFormCode] = useState("");
   const [labId, setLabId] = useState("");
   const [jsonFile, setJsonFile] = useState(null);
+  const [jsonFileName, setJsonFileName] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
   const [clauses, setClauses] = useState([]);
   const [expandedLabs, setExpandedLabs] = useState({});
 
@@ -76,7 +77,6 @@ export default function ManageStandards() {
   const toggleLab = (id) =>
     setExpandedLabs((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  // Flat sub-clause list from the current clause tree (for TemplateBuilder)
   function getSubClauses() {
     const result = [];
     clauses.forEach((k) => {
@@ -110,6 +110,7 @@ export default function ManageStandards() {
     setLabId("");
     setClauses([]);
     setJsonFile(null);
+    setJsonFileName("");
     setStandardNumbers([""]);
     setFormCode("");
     setActiveTab("BUILDER");
@@ -152,6 +153,7 @@ export default function ManageStandards() {
       setName("");
       setLabId("");
       setJsonFile(null);
+      setJsonFileName("");
       setClauses([]);
       setStandardNumbers([""]);
       setFormCode("");
@@ -174,12 +176,49 @@ export default function ManageStandards() {
     }
   };
 
+  // ── JSON File Processing & Drag-and-Drop Handlers ────────────────────────
+  const processJsonFile = (file) => {
+    if (!file) return;
+
+    if (!file.name.endsWith(".json") && file.type !== "application/json") {
+      toast.error("Please upload a valid .json file");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setJsonFile(ev.target.result);
+      setJsonFileName(file.name);
+      toast.success(`Loaded file: ${file.name}`);
+    };
+    reader.readAsText(file);
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => setJsonFile(ev.target.result);
-      reader.readAsText(file);
+    processJsonFile(file);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      processJsonFile(files[0]);
     }
   };
 
@@ -522,18 +561,45 @@ export default function ManageStandards() {
               </div>
             )}
 
-            {/* JSON tab */}
+            {/* JSON Drag and Drop tab */}
             {activeTab === "JSON" && (
-              <div className="border-2 border-dashed border-line rounded-xl p-5 bg-navy-50/60">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-navy-600 bg-navy-100/50"
+                    : "border-line bg-navy-50/60 hover:border-navy-400"
+                }`}
+              >
                 <input
                   type="file"
-                  accept=".json"
+                  accept=".json,application/json"
                   onChange={handleFileChange}
-                  className="w-full text-sm text-ink-500 file:mr-3 file:px-3.5 file:py-2 file:rounded-lg file:border-0 file:bg-navy-800 file:text-white file:text-[13px] file:font-semibold file:cursor-pointer"
+                  className="hidden"
+                  id="json-file-input"
                 />
-                <p className="text-xs text-ink-400 mt-2">
-                  Upload a pre-formatted JSON clause-tree file.
-                </p>
+                <label
+                  htmlFor="json-file-input"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-2"
+                >
+                  <FiUploadCloud size={32} className="text-navy-600" />
+                  <div className="text-sm font-semibold text-navy-800">
+                    Drag and drop your JSON file here, or{" "}
+                    <span className="text-navy-600 underline">browse</span>
+                  </div>
+                  <p className="text-xs text-ink-400">
+                    Upload a pre-formatted JSON clause-tree file (.json)
+                  </p>
+                </label>
+
+                {jsonFileName && (
+                  <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 bg-paper border border-line rounded-lg text-xs font-semibold text-navy-800">
+                    <FiFileText size={14} className="text-navy-600" />
+                    <span>Loaded: {jsonFileName}</span>
+                  </div>
+                )}
               </div>
             )}
 
