@@ -13,6 +13,7 @@ import {
   FiClipboard,
   FiImage,
   FiLock,
+  FiUploadCloud,
 } from "react-icons/fi";
 import apiClient from "../api";
 
@@ -87,9 +88,20 @@ function InfoRow({ label, value, mono, editing, onChange, placeholder, type }) {
   );
 }
 
-function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd, onRemove, locked }) {
+function ImageGallery({
+  title,
+  sub,
+  addLabel,
+  category,
+  reportId,
+  images,
+  onAdd,
+  onRemove,
+  locked,
+}) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const pick = () => {
     if (!reportId) {
@@ -99,18 +111,21 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
     inputRef.current?.click();
   };
 
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0];
+  const uploadFile = async (file) => {
     if (!file || !reportId) return;
+
+    // Check image type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Hanya berkas gambar yang diperbolehkan.");
+      return;
+    }
+
     setBusy(true);
     try {
       const fd = new FormData();
       fd.append("image", file);
       fd.append("category", category);
-      const res = await apiClient.post(
-        `/uploads/report-image/${reportId}`,
-        fd
-      );
+      const res = await apiClient.post(`/uploads/report-image/${reportId}`, fd);
       onAdd(res.data);
       toast.success("Gambar ditambahkan.");
     } catch (err) {
@@ -118,6 +133,44 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await uploadFile(file);
+    }
+  };
+
+  // Drag and drop event handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!locked && !isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    if (locked) return;
+
+    if (!reportId) {
+      toast.error("Report untuk sample ini belum tersedia.");
+      return;
+    }
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await uploadFile(files[0]);
     }
   };
 
@@ -131,7 +184,14 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
   };
 
   return (
-    <section className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden">
+    <section
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`bg-paper border rounded-2xl shadow-card overflow-hidden transition-colors ${
+        isDragging ? "border-navy-600 bg-navy-50/50" : "border-line"
+      }`}
+    >
       <div className="flex flex-col gap-3 nav:flex-row nav:items-center nav:justify-between p-4 nav:py-5 nav:px-6 border-b border-line-soft">
         <div>
           <h2 className="text-lg font-semibold text-navy-800">{title}</h2>
@@ -181,25 +241,41 @@ function ImageGallery({ title, sub, addLabel, category, reportId, images, onAdd,
             </div>
           </div>
         ))}
-        {locked
-          ? images.length === 0 && (
-              <div className="col-span-full py-8 text-center text-sm text-ink-400">
-                Tidak ada gambar.
-              </div>
-            )
-          : (
-              <button
-                onClick={pick}
-                disabled={busy}
-                className="aspect-[4/3] border-2 border-dashed border-line rounded-xl flex flex-col items-center justify-center gap-1.5 text-ink-400 text-xs hover:border-navy-500 hover:bg-navy-50 hover:text-navy-800 transition-colors disabled:opacity-50"
-              >
+
+        {locked ? (
+          images.length === 0 && (
+            <div className="col-span-full py-8 text-center text-sm text-ink-400">
+              Tidak ada gambar.
+            </div>
+          )
+        ) : (
+          <button
+            onClick={pick}
+            disabled={busy}
+            className={`aspect-[4/3] border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-1.5 text-xs transition-colors disabled:opacity-50 ${
+              isDragging
+                ? "border-navy-600 bg-navy-100/50 text-navy-800"
+                : "border-line text-ink-400 hover:border-navy-500 hover:bg-navy-50 hover:text-navy-800"
+            }`}
+          >
+            {isDragging ? (
+              <>
+                <FiUploadCloud size={24} className="text-navy-600" />
+                <strong className="text-[13px] font-semibold text-navy-800">
+                  Lepaskan berkas di sini
+                </strong>
+              </>
+            ) : (
+              <>
                 <FiPlus size={20} />
                 <strong className="text-[13px] font-semibold">
                   {addLabel}
                 </strong>
-                <span>PNG / JPG · maks 5 MB</span>
-              </button>
+                <span>Tarik file atau klik · PNG/JPG maks 5 MB</span>
+              </>
             )}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -258,11 +334,11 @@ export default function DatasheetDetail() {
 
   const componentImages = useMemo(
     () => images.filter((i) => i.category === "COMPONENT"),
-    [images]
+    [images],
   );
   const sampleImages = useMemo(
     () => images.filter((i) => i.category !== "COMPONENT"),
-    [images]
+    [images],
   );
 
   const addComponent = async () => {
@@ -274,7 +350,7 @@ export default function DatasheetDetail() {
     try {
       const res = await apiClient.post(
         `/samples/${sampleId}/components`,
-        draft
+        draft,
       );
       setComponents((c) => [...c, res.data]);
       setDraft(EMPTY_DRAFT);
@@ -379,8 +455,6 @@ export default function DatasheetDetail() {
       {/* Detail head */}
       <div className="flex flex-col gap-4 nav:flex-row nav:justify-between nav:items-start bg-paper border border-line rounded-2xl shadow-card p-5 nav:p-6">
         <div className="min-w-0">
-          {/* break-all: nomor order mono panjang tanpa spasi harus bisa
-              patah di layar sempit, bukan meluber keluar viewport */}
           <div className="font-mono text-[13px] text-ink-400 break-all">
             Datasheet · {order.order_no || sample.id}
           </div>
@@ -389,10 +463,16 @@ export default function DatasheetDetail() {
           </h1>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-ink-400 mt-1.5">
             <span>
-              Lab: <strong className="font-medium text-navy-800">{order.lab?.name || "—"}</strong>
+              Lab:{" "}
+              <strong className="font-medium text-navy-800">
+                {order.lab?.name || "—"}
+              </strong>
             </span>
             <span>
-              Sample: <strong className="font-medium text-navy-800">{sample.name || "—"}</strong>
+              Sample:{" "}
+              <strong className="font-medium text-navy-800">
+                {sample.name || "—"}
+              </strong>
             </span>
             <span>
               Created:{" "}
@@ -416,7 +496,9 @@ export default function DatasheetDetail() {
       {/* Datasheet info */}
       <section className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden">
         <div className="flex items-center justify-between gap-3 p-4 nav:py-5 nav:px-6 border-b border-line-soft">
-          <h2 className="text-lg font-semibold text-navy-800">Datasheet info</h2>
+          <h2 className="text-lg font-semibold text-navy-800">
+            Datasheet info
+          </h2>
           {editing ? (
             <div className="flex items-center gap-2">
               <button
@@ -465,11 +547,7 @@ export default function DatasheetDetail() {
           />
           <InfoRow
             label="Applicant address"
-            {...editField(
-              "applicant_address",
-              order.address,
-              "Alamat pemohon"
-            )}
+            {...editField("applicant_address", order.address, "Alamat pemohon")}
           />
           <InfoRow
             label="Brand"
@@ -488,7 +566,7 @@ export default function DatasheetDetail() {
             {...editField(
               "factory_address",
               sample.factory_address,
-              "Alamat pabrikan"
+              "Alamat pabrikan",
             )}
           />
           <InfoRow
@@ -496,7 +574,7 @@ export default function DatasheetDetail() {
             {...editField(
               "country_origin",
               sample.country_origin,
-              "Negara pembuat"
+              "Negara pembuat",
             )}
           />
           <InfoRow
@@ -506,16 +584,11 @@ export default function DatasheetDetail() {
           <InfoRow
             label="Tanggal Terima Sampel"
             type="date"
-            {...editField(
-              "received_date",
-              fmtDate(sample.received_date),
-              "",
-            )}
+            {...editField("received_date", fmtDate(sample.received_date), "")}
           />
           <InfoRow
             label="Tanggal Pengujian"
             value={(() => {
-              // Range of the per-klausul "Tanggal Uji" the technician filled
               const start = report?.test_period_start;
               const end = report?.test_period_end;
               if (start) {
@@ -523,7 +596,6 @@ export default function DatasheetDetail() {
                   ? fmtDate(start)
                   : `${fmtDate(start)} — ${fmtDate(end)}`;
               }
-              // Fallback: activity timestamps (older reports / not yet filled)
               if (report?.test_started_at) {
                 return `${fmtDate(report.test_started_at)}${
                   report.test_finished_at
@@ -583,7 +655,10 @@ export default function DatasheetDetail() {
             <tbody>
               {addOpen && (
                 <tr>
-                  <td colSpan={8} className="bg-[#fbfcfe] px-4 py-3 border-b border-line-soft">
+                  <td
+                    colSpan={8}
+                    className="bg-[#fbfcfe] px-4 py-3 border-b border-line-soft"
+                  >
                     <div className="grid grid-cols-1 nav:grid-cols-3 gap-2">
                       <input
                         autoFocus
@@ -693,7 +768,11 @@ export default function DatasheetDetail() {
                     <td className={td("font-medium text-navy-800")}>
                       {k.objek}
                     </td>
-                    <td className={td(k.pabrikan ? "text-ink-700" : "text-ink-300")}>
+                    <td
+                      className={td(
+                        k.pabrikan ? "text-ink-700" : "text-ink-300",
+                      )}
+                    >
                       {k.pabrikan || "—"}
                     </td>
                     <td className={td("font-mono text-[12px] text-ink-500")}>
@@ -702,7 +781,9 @@ export default function DatasheetDetail() {
                     <td className={td("text-ink-700")}>
                       {k.data_teknis || "—"}
                     </td>
-                    <td className={td("text-center font-semibold text-navy-700")}>
+                    <td
+                      className={td("text-center font-semibold text-navy-700")}
+                    >
                       {k.standar || "—"}
                     </td>
                     <td className={td("text-center")}>

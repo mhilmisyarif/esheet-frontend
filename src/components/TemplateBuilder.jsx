@@ -52,7 +52,8 @@ const INPUT_TYPES = ["text", "number", "dropdown"];
 const clauseLabel = (s, max = 60) => {
   const judul = (s.judul || "").trim();
   if (!judul) return s.kode;
-  const short = judul.length > max ? `${judul.slice(0, max).trimEnd()}…` : judul;
+  const short =
+    judul.length > max ? `${judul.slice(0, max).trimEnd()}…` : judul;
   return `${s.kode} — ${short}`;
 };
 
@@ -87,7 +88,11 @@ const lbl = "block text-[11px] font-medium text-ink-500 mb-1";
 const iconBtn =
   "inline-flex items-center justify-center rounded-md transition-colors shrink-0";
 
-export default function TemplateBuilder({ standardId, subClauses = [], onClose }) {
+export default function TemplateBuilder({
+  standardId,
+  subClauses = [],
+  onClose,
+}) {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState(null); // null = list view
@@ -100,7 +105,7 @@ export default function TemplateBuilder({ standardId, subClauses = [], onClose }
     setLoading(true);
     try {
       const res = await apiClient.get(
-        `/standards/${standardId}/table-templates`
+        `/standards/${standardId}/table-templates`,
       );
       setTemplates(res.data || []);
     } catch (e) {
@@ -142,7 +147,7 @@ export default function TemplateBuilder({ standardId, subClauses = [], onClose }
             subClauseCode: editingTemplate.subClauseCode,
             title: editingTemplate.title,
             definition: editingTemplate.definition,
-          }
+          },
         );
         setTemplates((prev) => [...prev, res.data]);
       } else {
@@ -152,10 +157,10 @@ export default function TemplateBuilder({ standardId, subClauses = [], onClose }
             title: editingTemplate.title,
             subClauseCode: editingTemplate.subClauseCode,
             definition: editingTemplate.definition,
-          }
+          },
         );
         setTemplates((prev) =>
-          prev.map((t) => (t.id === res.data.id ? res.data : t))
+          prev.map((t) => (t.id === res.data.id ? res.data : t)),
         );
       }
       toast.success("Template disimpan");
@@ -170,7 +175,7 @@ export default function TemplateBuilder({ standardId, subClauses = [], onClose }
   async function deleteTemplate(id) {
     if (
       !window.confirm(
-        "Hapus template ini? Semua data yang sudah diisi akan hilang."
+        "Hapus template ini? Semua data yang sudah diisi akan hilang.",
       )
     )
       return;
@@ -634,7 +639,13 @@ function TemplateEditor({
 }
 
 // ── Key-value section editor ──────────────────────────────────────────────────
-function KvSectionEditor({ section, sIdx, addKvRow, updateKvRow, removeKvRow }) {
+function KvSectionEditor({
+  section,
+  sIdx,
+  addKvRow,
+  updateKvRow,
+  removeKvRow,
+}) {
   return (
     <div className="flex flex-col gap-2">
       {section.rows.map((row, rIdx) => (
@@ -709,99 +720,127 @@ function TableSectionEditor({
   const fixedRows = section.fixedRows || [];
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Allow add rows toggle */}
-      <label className="flex items-center gap-2 text-xs text-ink-600">
-        <input
-          type="checkbox"
-          className="accent-navy-700"
-          checked={section.allowAddRows || false}
-          onChange={(e) =>
-            setDef((def) => {
-              def.sections[sIdx].allowAddRows = e.target.checked;
-              return def;
-            })
-          }
-        />
-        Teknisi dapat menambah baris baru
-      </label>
+    <div className="flex flex-col gap-5 p-2">
+      {/* 1. Global Table Settings */}
+      <div className="bg-white p-3 rounded-lg border border-line">
+        <span className="text-[13px] font-semibold text-navy-800 block mb-1">
+          Pengaturan Tabel
+        </span>
+        <p className="text-[11px] text-ink-500 mb-2">
+          Atur hak akses teknisi saat mengisi tabel ini nanti.
+        </p>
+        <label className="flex items-center gap-2 text-xs text-ink-600 cursor-pointer">
+          <input
+            type="checkbox"
+            className="accent-navy-700 w-4 h-4"
+            checked={section.allowAddRows || false}
+            onChange={(e) =>
+              setDef((def) => {
+                def.sections[sIdx].allowAddRows = e.target.checked;
+                return def;
+              })
+            }
+          />
+          Izinkan teknisi menambah baris baru pada tabel
+        </label>
+      </div>
 
-      {/* Columns */}
+      {/* 2. Columns Manager */}
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-ink-600">Kolom</span>
-          <button onClick={() => addColumn(sIdx)} className={linkBtn}>
-            <FiPlus size={11} /> Tambah kolom
-          </button>
+        <div className="mb-3">
+          <span className="text-[13px] font-semibold text-navy-800 block">
+            Struktur Kolom
+          </span>
+          <p className="text-[11px] text-ink-500">
+            Klik pada kolom untuk mengedit nama, tipe, dan rumus otomatis.
+          </p>
         </div>
-        <div className="flex flex-col gap-1.5">
+
+        <div className="flex flex-col gap-2">
           {columns.map((col, cIdx) => (
             <div
               key={col.id}
-              className="border border-line rounded-lg bg-paper overflow-hidden"
+              className={`border rounded-lg bg-paper overflow-hidden transition-colors ${
+                expandedCol === cIdx
+                  ? "border-navy-400 shadow-sm"
+                  : "border-line"
+              }`}
             >
+              {/* Column Header (Clickable) */}
               <div
-                className="flex items-center gap-2 px-2.5 py-2 cursor-pointer"
+                className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-navy-50"
                 onClick={() =>
                   setExpandedCol(expandedCol === cIdx ? null : cIdx)
                 }
               >
                 {expandedCol === cIdx ? (
-                  <FiChevronDown size={12} className="text-ink-400" />
+                  <FiChevronDown size={14} className="text-navy-600" />
                 ) : (
-                  <FiChevronRight size={12} className="text-ink-400" />
+                  <FiChevronRight size={14} className="text-ink-400" />
                 )}
-                <span className="text-[13px] flex-1 text-navy-800">
-                  {col.header || "Kolom"}
+
+                <span className="text-[13px] font-medium flex-1 text-navy-800">
+                  {col.header || "Kolom Baru"}
                   {!col.editable && (
-                    <span className="ml-1.5 text-[11px] font-semibold text-warn-fg">
-                      [auto]
+                    <span className="ml-2 text-[10px] font-bold bg-warn-bg text-warn-fg px-1.5 py-0.5 rounded">
+                      AUTO
                     </span>
                   )}
                   {col.isResult && (
-                    <span className="ml-1.5 text-[11px] font-semibold text-ok-fg">
-                      [hasil]
+                    <span className="ml-2 text-[10px] font-bold bg-ok-bg text-ok-fg px-1.5 py-0.5 rounded">
+                      HASIL L/G
                     </span>
                   )}
                 </span>
-                <span className="text-xs text-ink-400">{col.inputType}</span>
+
+                <span className="text-[11px] px-2 py-1 bg-gray-100 rounded text-ink-500 font-mono">
+                  {col.inputType}
+                </span>
+
                 {columns.length > 1 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       removeColumn(sIdx, cIdx);
                     }}
-                    className={`${iconBtn} w-6 h-6 text-ink-400 hover:bg-bad-bg hover:text-bad-fg`}
+                    className="w-7 h-7 flex items-center justify-center rounded text-ink-400 hover:bg-bad-bg hover:text-bad-fg transition-colors ml-1"
+                    title="Hapus Kolom"
                   >
-                    <FiTrash2 size={12} />
+                    <FiTrash2 size={14} />
                   </button>
                 )}
               </div>
 
+              {/* Column Settings (Expanded) */}
               {expandedCol === cIdx && (
-                <div className="border-t border-line-soft p-3 flex flex-col gap-2.5">
-                  <div className="grid grid-cols-2 gap-2">
+                <div className="border-t border-line-soft p-4 flex flex-col gap-4 bg-white">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className={lbl}>Header</label>
+                      <label className="block text-[11px] font-medium text-ink-500 mb-1">
+                        Nama Kolom (Header)
+                      </label>
                       <input
                         value={col.header}
                         onChange={(e) =>
                           updateColumn(sIdx, cIdx, "header", e.target.value)
                         }
-                        className={inpXs}
+                        className="w-full px-2.5 py-1.5 border border-line rounded-md text-xs text-navy-800 outline-none focus:border-navy-600"
+                        placeholder="Contoh: Hasil Ukur"
                       />
                     </div>
                     <div>
-                      <label className={lbl}>Tipe input</label>
+                      <label className="block text-[11px] font-medium text-ink-500 mb-1">
+                        Tipe Input Data
+                      </label>
                       <select
                         value={col.inputType}
                         onChange={(e) =>
                           updateColumn(sIdx, cIdx, "inputType", e.target.value)
                         }
                         disabled={col.isResult}
-                        className={inpXs}
+                        className="w-full px-2.5 py-1.5 border border-line rounded-md text-xs text-navy-800 outline-none focus:border-navy-600 disabled:bg-gray-100"
                       >
-                        {INPUT_TYPES.map((ty) => (
+                        {["text", "number", "dropdown"].map((ty) => (
                           <option key={ty} value={ty}>
                             {ty}
                           </option>
@@ -812,8 +851,8 @@ function TableSectionEditor({
 
                   {col.inputType === "dropdown" && (
                     <div>
-                      <label className={lbl}>
-                        Opsi dropdown (satu per baris)
+                      <label className="block text-[11px] font-medium text-ink-500 mb-1">
+                        Pilihan Dropdown (Pisahkan dengan Enter)
                       </label>
                       <textarea
                         value={(col.dropdownOptions || []).join("\n")}
@@ -822,51 +861,43 @@ function TableSectionEditor({
                             sIdx,
                             cIdx,
                             "dropdownOptions",
-                            e.target.value.split("\n").filter(Boolean)
+                            e.target.value.split("\n").filter(Boolean),
                           )
                         }
                         rows={3}
-                        className={inpXs}
+                        placeholder="Pilihan 1&#10;Pilihan 2"
+                        className="w-full px-2.5 py-1.5 border border-line rounded-md text-xs text-navy-800 outline-none focus:border-navy-600"
                       />
                     </div>
                   )}
 
-                  <div className="flex gap-4 text-xs">
-                    <label className="flex items-center gap-1.5 text-ink-600">
+                  <div className="flex flex-col gap-2 p-3 bg-gray-50 border border-line rounded-md">
+                    <label className="flex items-center gap-2 text-xs text-navy-800 font-medium cursor-pointer">
                       <input
                         type="checkbox"
-                        className="accent-navy-700"
+                        className="accent-navy-700 w-4 h-4"
                         checked={col.editable}
                         disabled={!!col.formula || col.isResult}
                         onChange={(e) =>
-                          updateColumn(
-                            sIdx,
-                            cIdx,
-                            "editable",
-                            e.target.checked
-                          )
+                          updateColumn(sIdx, cIdx, "editable", e.target.checked)
                         }
                       />
-                      Dapat diedit teknisi
+                      Teknisi boleh mengisi kolom ini secara manual
                     </label>
-                    <label className="flex items-center gap-1.5 text-ink-600">
+                    <label className="flex items-center gap-2 text-xs text-navy-800 font-medium cursor-pointer">
                       <input
                         type="checkbox"
-                        className="accent-navy-700"
+                        className="accent-navy-700 w-4 h-4"
                         checked={col.isResult || false}
                         onChange={(e) =>
-                          updateColumn(
-                            sIdx,
-                            cIdx,
-                            "isResult",
-                            e.target.checked
-                          )
+                          updateColumn(sIdx, cIdx, "isResult", e.target.checked)
                         }
                       />
-                      Kolom hasil (L/TB/G)
+                      Jadikan sebagai kolom Penilaian Otomatis (Lulus/Gagal)
                     </label>
                   </div>
 
+                  {/* Feature Editors */}
                   {!col.isResult && (
                     <FormulaEditor
                       col={col}
@@ -890,119 +921,151 @@ function TableSectionEditor({
               )}
             </div>
           ))}
+
+          {/* NEW: Large, obvious "Add Column" Button */}
+          <button
+            onClick={() => {
+              addColumn(sIdx);
+              setExpandedCol(columns.length); // Auto-expand the new column
+            }}
+            className="w-full mt-2 py-3.5 flex flex-col items-center justify-center gap-1 border-2 border-dashed border-line-soft hover:border-navy-400 hover:bg-navy-50 rounded-lg transition-colors text-navy-600 cursor-pointer"
+          >
+            <FiPlus size={20} />
+            <span className="text-[13px] font-semibold">Tambah Kolom Baru</span>
+            <span className="text-[11px] text-ink-400">
+              Klik untuk menambah kolom ke sebelah kanan tabel
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* Fixed rows */}
-      <div>
+      {/* 3. Fixed rows (Pre-filled data) */}
+      <div className="mt-2 border-t border-line-soft pt-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-ink-600">
-            Baris tetap (pre-filled)
-          </span>
-          <button onClick={() => addFixedRow(sIdx)} className={linkBtn}>
-            <FiPlus size={11} /> Tambah baris
+          <div>
+            <span className="text-[13px] font-semibold text-navy-800 block">
+              Baris Pre-filled (Opsional)
+            </span>
+            <p className="text-[11px] text-ink-500">
+              Tambahkan baris yang sudah terisi otomatis dari awal.
+            </p>
+          </div>
+          <button
+            onClick={() => addFixedRow(sIdx)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-navy-700 hover:text-navy-900 bg-navy-50 px-3 py-1.5 rounded-md"
+          >
+            <FiPlus size={12} /> Tambah Baris Default
           </button>
         </div>
+
         {fixedRows.length > 0 && (
-          <div className="overflow-x-auto border border-line rounded-lg">
+          <div className="overflow-x-auto border border-line rounded-lg mt-3">
             <table className="text-xs border-collapse w-full">
               <thead>
                 <tr>
                   {columns.map((c) => (
                     <th
                       key={c.id}
-                      className="border-b border-r border-line bg-navy-50 px-2 py-1.5 text-left font-semibold text-ink-500 whitespace-nowrap"
+                      className="border-b border-r border-line bg-navy-50 px-2 py-2 text-left font-semibold text-ink-600 whitespace-nowrap"
                     >
                       {c.header}
                     </th>
                   ))}
-                  <th className="border-b border-line bg-navy-50 w-7" />
+                  <th className="border-b border-line bg-navy-50 w-8" />
                 </tr>
               </thead>
               <tbody>
-                {fixedRows.map((row, rIdx) => (
-                  <tr key={row.id}>
-                    {columns.map((c) => (
-                      <td
-                        key={c.id}
-                        className="border-b border-r border-line-soft px-1 py-0.5"
-                      >
-                        <input
-                          value={row.cells?.[c.id] ?? ""}
-                          onChange={(e) =>
-                            updateFixedRow(sIdx, rIdx, c.id, e.target.value)
-                          }
-                          placeholder={c.editable ? "" : "(auto)"}
-                          disabled={!c.editable}
-                          className="w-full px-1 py-0.5 text-xs bg-transparent outline-none disabled:bg-navy-50 disabled:text-ink-400"
-                        />
-                      </td>
-                    ))}
-                    <td className="border-b border-line-soft px-1 py-0.5 text-center">
-                      {fixedRows.length > 1 && (
-                        <button
-                          onClick={() => removeFixedRow(sIdx, rIdx)}
-                          className="text-ink-400 hover:text-bad-fg"
-                        >
-                          <FiTrash2 size={11} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {fixedRows.length > 0 && (
+                  <div className="overflow-x-auto border border-line rounded-lg mt-3">
+                    <table className="text-xs border-collapse w-full">
+                      <thead>
+                        {/* 1. Optional: We can add a "Super Header" row here in the future for "Kode Sampel" */}
+                        <tr>
+                          {/* Extra empty header to make space for the vertical Row Group column */}
+                          {section.rowGroups &&
+                            section.rowGroups.length > 0 && (
+                              <th className="border-b border-r border-line bg-navy-50 w-8"></th>
+                            )}
+
+                          {columns.map((c) => (
+                            <th
+                              key={c.id}
+                              className="border-b border-r border-line bg-navy-50 px-2 py-2 text-center font-semibold text-ink-600 whitespace-nowrap"
+                            >
+                              {c.header}
+                            </th>
+                          ))}
+                          <th className="border-b border-line bg-navy-50 w-8" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fixedRows.map((row, rIdx) => {
+                          // 2. Check if this specific row is the FIRST row in any defined rowGroup
+                          const activeGroup = (section.rowGroups || []).find(
+                            (g) => (g.rowIds || [])[0] === row.id,
+                          );
+
+                          return (
+                            <tr key={row.id}>
+                              {/* 3. If this is the first row of a group, render a cell that spans multiple rows! */}
+                              {activeGroup && (
+                                <td
+                                  rowSpan={activeGroup.rowIds.length}
+                                  className="border-b border-r border-line-soft bg-navy-50 px-2 py-1 text-center font-semibold text-navy-800"
+                                  style={{
+                                    writingMode: "vertical-lr",
+                                    transform: "rotate(180deg)",
+                                  }} // Rotates the text vertically like the image
+                                >
+                                  {activeGroup.label || "Grup"}
+                                </td>
+                              )}
+
+                              {/* Standard Columns Rendering */}
+                              {columns.map((c) => (
+                                <td
+                                  key={c.id}
+                                  className="border-b border-r border-line-soft px-1 py-1"
+                                >
+                                  <input
+                                    value={row.cells?.[c.id] ?? ""}
+                                    onChange={(e) =>
+                                      updateFixedRow(
+                                        sIdx,
+                                        rIdx,
+                                        c.id,
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder={
+                                      c.editable ? "Ketik..." : "Otomatis"
+                                    }
+                                    disabled={!c.editable}
+                                    className="w-full px-2 py-1.5 text-xs bg-transparent outline-none disabled:bg-gray-50 disabled:text-ink-400 rounded text-center"
+                                  />
+                                </td>
+                              ))}
+                              <td className="border-b border-line-soft px-1 py-1 text-center">
+                                {fixedRows.length > 1 && (
+                                  <button
+                                    onClick={() => removeFixedRow(sIdx, rIdx)}
+                                    className="text-ink-400 hover:text-bad-fg p-1"
+                                  >
+                                    <FiTrash2 size={12} />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </tbody>
             </table>
           </div>
         )}
-      </div>
-
-      {/* Row groups */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-ink-600">
-            Grup baris (label visual, opsional)
-          </span>
-          <button onClick={() => addRowGroup(sIdx)} className={linkBtn}>
-            <FiPlus size={11} /> Tambah grup
-          </button>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {(section.rowGroups || []).map((g, gIdx) => (
-            <div key={gIdx} className="flex items-center gap-2">
-              <FiMenu size={12} className="text-ink-300 shrink-0" />
-              <input
-                value={g.label}
-                onChange={(e) =>
-                  updateRowGroup(sIdx, gIdx, "label", e.target.value)
-                }
-                placeholder="Label grup"
-                className={inpXs}
-              />
-              <input
-                value={(g.rowIds || []).join(", ")}
-                onChange={(e) =>
-                  updateRowGroup(
-                    sIdx,
-                    gIdx,
-                    "rowIds",
-                    e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-                  )
-                }
-                placeholder="Row IDs (comma-separated)"
-                className={inpXs}
-              />
-              <button
-                onClick={() => removeRowGroup(sIdx, gIdx)}
-                className={`${iconBtn} w-7 h-7 text-ink-400 hover:bg-bad-bg hover:text-bad-fg`}
-              >
-                <FiTrash2 size={11} />
-              </button>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -1026,8 +1089,12 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
           onChange={(e) =>
             setFormula(
               e.target.checked
-                ? { op: "subtract", a: otherCols[0]?.id || "", b: otherCols[1]?.id || "" }
-                : null
+                ? {
+                    op: "subtract",
+                    a: otherCols[0]?.id || "",
+                    b: otherCols[1]?.id || "",
+                  }
+                : null,
             )
           }
         />
@@ -1042,10 +1109,16 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
               type="button"
               onClick={() =>
                 isAggregate &&
-                setFormula({ op: "subtract", a: otherCols[0]?.id || "", b: otherCols[1]?.id || "" })
+                setFormula({
+                  op: "subtract",
+                  a: otherCols[0]?.id || "",
+                  b: otherCols[1]?.id || "",
+                })
               }
               className={`px-2 py-1 rounded text-[11px] font-semibold ${
-                !isAggregate ? "bg-warn-fg text-white" : "bg-white text-warn-fg border border-warn-fg/30"
+                !isAggregate
+                  ? "bg-warn-fg text-white"
+                  : "bg-white text-warn-fg border border-warn-fg/30"
               }`}
             >
               2 kolom (± × ÷)
@@ -1054,10 +1127,15 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
               type="button"
               onClick={() =>
                 !isAggregate &&
-                setFormula({ op: "average", cols: otherCols.slice(0, 2).map((c) => c.id) })
+                setFormula({
+                  op: "average",
+                  cols: otherCols.slice(0, 2).map((c) => c.id),
+                })
               }
               className={`px-2 py-1 rounded text-[11px] font-semibold ${
-                isAggregate ? "bg-warn-fg text-white" : "bg-white text-warn-fg border border-warn-fg/30"
+                isAggregate
+                  ? "bg-warn-fg text-white"
+                  : "bg-white text-warn-fg border border-warn-fg/30"
               }`}
             >
               Rata-rata / Jumlah
@@ -1069,7 +1147,9 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
               <div className="flex gap-1.5 mb-2">
                 <select
                   value={col.formula.op}
-                  onChange={(e) => setFormula({ ...col.formula, op: e.target.value })}
+                  onChange={(e) =>
+                    setFormula({ ...col.formula, op: e.target.value })
+                  }
                   className={inpXs}
                 >
                   <option value="average">Rata-rata</option>
@@ -1084,7 +1164,9 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
                     <label
                       key={c.id}
                       className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] cursor-pointer border ${
-                        checked ? "bg-warn-bg border-warn-fg/40 text-warn-fg" : "bg-white border-line text-ink-500"
+                        checked
+                          ? "bg-warn-bg border-warn-fg/40 text-warn-fg"
+                          : "bg-white border-line text-ink-500"
                       }`}
                     >
                       <input
@@ -1108,29 +1190,41 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
             <div className="grid grid-cols-3 gap-1.5 items-center">
               <select
                 value={col.formula.a}
-                onChange={(e) => setFormula({ ...col.formula, a: e.target.value })}
+                onChange={(e) =>
+                  setFormula({ ...col.formula, a: e.target.value })
+                }
                 className={inpXs}
               >
                 {otherCols.map((c) => (
-                  <option key={c.id} value={c.id}>{c.header}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.header}
+                  </option>
                 ))}
               </select>
               <select
                 value={col.formula.op}
-                onChange={(e) => setFormula({ ...col.formula, op: e.target.value })}
+                onChange={(e) =>
+                  setFormula({ ...col.formula, op: e.target.value })
+                }
                 className={inpXs}
               >
                 {FORMULA_OPS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
                 ))}
               </select>
               <select
                 value={col.formula.b}
-                onChange={(e) => setFormula({ ...col.formula, b: e.target.value })}
+                onChange={(e) =>
+                  setFormula({ ...col.formula, b: e.target.value })
+                }
                 className={inpXs}
               >
                 {otherCols.map((c) => (
-                  <option key={c.id} value={c.id}>{c.header}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.header}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1148,7 +1242,7 @@ function FormulaEditor({ col, columns, cIdx, sIdx, updateColumn }) {
 // ── Pass rule editor ──────────────────────────────────────────────────────────
 function PassRuleEditor({ col, columns, cIdx, sIdx, updateColumn }) {
   const numericCols = columns.filter(
-    (c) => c.id !== col.id && c.inputType === "number"
+    (c) => c.id !== col.id && c.inputType === "number",
   );
   const rule = col.passRule || {};
   const isRange = rule.op === "range";
