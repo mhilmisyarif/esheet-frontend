@@ -15,6 +15,8 @@ import DashboardRedirect from "./pages/DashboardRedirect";
 import ManageStandards from "./pages/ManageStandards";
 import DatasheetDetail from "./pages/DatasheetDetail";
 import AppShell from "./components/AppShell";
+import RegisterUser from "./pages/RegisterUser";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function Header() {
   const { user, logout } = useAuth();
@@ -84,7 +86,11 @@ export default function App() {
         {/* Legacy layout */}
         <Route
           path="/"
-          element={<LegacyLayout><DashboardRedirect /></LegacyLayout>}
+          element={
+            <LegacyLayout>
+              <DashboardRedirect />
+            </LegacyLayout>
+          }
         />
         <Route
           path="/engineer-dashboard"
@@ -104,7 +110,11 @@ export default function App() {
         />
         <Route
           path="/orders/:orderId"
-          element={<LegacyLayout><OrderDetail /></LegacyLayout>}
+          element={
+            <LegacyLayout>
+              <OrderDetail />
+            </LegacyLayout>
+          }
         />
         <Route
           path="/datasheet/:sampleId"
@@ -127,6 +137,22 @@ export default function App() {
           element={
             <AppShell crumbs={["Engineer", "Manage Standards"]}>
               <ManageStandards />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/register-user"
+          element={
+            <AppShell crumbs={["Admin", "Register User"]}>
+              <RegisterUser />
+            </AppShell>
+          }
+        />
+        <Route
+          path="/admin-dashboard"
+          element={
+            <AppShell crumbs={["Admin", "Dashboard"]}>
+              <AdminDashboard />
             </AppShell>
           }
         />
