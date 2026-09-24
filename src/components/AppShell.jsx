@@ -50,6 +50,22 @@ const ENGINEER_NAV = [
   { key: "profile", label: "Profile", Icon: FiUser, path: null },
 ];
 
+const ADMIN_NAV = [
+  {
+    key: "dashboard",
+    label: "Dashboard",
+    Icon: FiGrid,
+    path: "/admin-dashboard", // Updated path for Admin
+  },
+  {
+    key: "standards",
+    label: "Manage Standards",
+    Icon: FiBookOpen,
+    path: "/manage-standards",
+  },
+  { key: "profile", label: "Profile", Icon: FiUser, path: null },
+];
+
 function titleCase(s) {
   if (!s) return "";
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
@@ -340,11 +356,13 @@ export default function AppShell({
     }
   };
 
-  const isEngineerSide =
-    user?.role === "ENGINEER" ||
-    user?.role === "ADMIN" ||
-    user?.role === "DRAFTER";
-  const nav = isEngineerSide ? ENGINEER_NAV : TECH_NAV;
+  let nav = TECH_NAV; // Default to technician
+
+  if (user?.role === "ADMIN") {
+    nav = ADMIN_NAV;
+  } else if (user?.role === "ENGINEER" || user?.role === "DRAFTER") {
+    nav = ENGINEER_NAV;
+  }
 
   useEffect(() => {
     document.body.style.overflow = navOpen ? "hidden" : "";
