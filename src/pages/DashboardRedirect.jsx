@@ -8,10 +8,11 @@ export default function DashboardRedirect() {
 
   if (user?.role === "TECHNICIAN")
     return <Navigate to="/technician-dashboard" replace />;
-  if (user?.role === "ENGINEER" || user?.role === "ADMIN")
+  if (user?.role === "ENGINEER")
     return <Navigate to="/engineer-dashboard" replace />;
-  if (user?.role === "DRAFTER")
-    return <Navigate to="/engineer-dashboard" replace />;
+  if (user?.role === "ADMIN") return <Navigate to="/admin-dashboard" replace />;
+  // if (user?.role === "DRAFTER")
+  //   return <Navigate to="/engineer-dashboard" replace />;
 
   return <Navigate to="/login" replace />;
 }
