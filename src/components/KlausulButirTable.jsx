@@ -104,6 +104,7 @@ export default function KlausulButirTable({
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [imagesState, setImagesState] = useState(report.images || []);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [technicians, setTechnicians] = useState([]);
 
   const dirtyRef = useRef({});
   const persistedRef = useRef({});
@@ -118,9 +119,40 @@ export default function KlausulButirTable({
   const reportId =
     (fullReport && fullReport.id) || (report && report.id) || null;
 
+  const labId =
+    fullReport?.sample?.order?.labId ||
+    fullReport?.sample?.order?.lab_id ||
+    report?.sample?.order?.labId ||
+    report?.lab_id ||
+    null;
+
   const reportStatus = fullReport?.status || report?.status || "DRAFT";
   const locked = reportStatus === "APPROVED";
   const isNarrow = useIsNarrow();
+
+  // Fetch technicians filtered by ACTIVE status and labId
+  useEffect(() => {
+    const fetchTechnicians = async () => {
+      try {
+        // Build query string dynamically based on whether labId exists
+        const queryParams = new URLSearchParams({ status: "ACTIVE" });
+        if (labId) {
+          queryParams.append("labId", labId);
+        }
+
+        const response = await apiClient.get(
+          `/technicians?${queryParams.toString()}`,
+        );
+        if (response.data && response.data.data) {
+          setTechnicians(response.data.data);
+        }
+      } catch (error) {
+        console.error("Failed to load technician list for lab:", error);
+      }
+    };
+
+    fetchTechnicians();
+  }, [labId]);
 
   useEffect(() => {
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
@@ -571,17 +603,31 @@ export default function KlausulButirTable({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 nav:grid-cols-4 gap-5 p-4 nav:p-5">
               <CondField label="Nama Teknisi / Penguji">
-                <input
+                <select
                   value={(k.meta && k.meta.tester_name) || ""}
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, {
                       tester_name: e.target.value,
                     })
                   }
-                  readOnly={locked}
+                  disabled={locked}
                   className={condCls}
-                  placeholder="Nama teknisi"
-                />
+                >
+                  <option value="">-- Pilih Teknisi --</option>
+                  {technicians.map((tech) => (
+                    <option key={tech.id} value={tech.name}>
+                      {tech.name}{" "}
+                      {tech.employeeId ? `(${tech.employeeId})` : ""}
+                    </option>
+                  ))}
+                  {/* Ensures existing report names remain selected if not present in the current active list */}
+                  {k.meta?.tester_name &&
+                    !technicians.some((t) => t.name === k.meta.tester_name) && (
+                      <option value={k.meta.tester_name}>
+                        {k.meta.tester_name}
+                      </option>
+                    )}
+                </select>
               </CondField>
               <CondField label="Tanggal Uji">
                 <input
@@ -644,387 +690,401 @@ export default function KlausulButirTable({
                 conditional render (not CSS hidden) so TableInstanceEditor
                 mounts exactly once. */}
             {!isNarrow && (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-separate border-spacing-0">
-                <thead>
-                  <tr>
-                    <th className={`${thCls} w-[12%]`}>Klausul</th>
-                    <th className={`${thCls} w-[42%]`}>
-                      Syarat-syarat Pengujian
-                    </th>
-                    <th className={`${thCls} w-[26%]`}>Hasil / Catatan</th>
-                    <th className={`${thCls} w-[20%] !text-right`}>
-                      Keputusan
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {k.sub_klausul.map((s) => {
-                    const subLocked = isSubLockedFor(s);
-                    const subCatLocked = isSubCatatanLocked(s);
-                    return (
-                      <React.Fragment key={s.kode}>
-                        {/* Sub-klausul row — has its own Hasil/Catatan and
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] border-separate border-spacing-0">
+                  <thead>
+                    <tr>
+                      <th className={`${thCls} w-[12%]`}>Klausul</th>
+                      <th className={`${thCls} w-[42%]`}>
+                        Syarat-syarat Pengujian
+                      </th>
+                      <th className={`${thCls} w-[26%]`}>Hasil / Catatan</th>
+                      <th className={`${thCls} w-[20%] !text-right`}>
+                        Keputusan
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {k.sub_klausul.map((s) => {
+                      const subLocked = isSubLockedFor(s);
+                      const subCatLocked = isSubCatatanLocked(s);
+                      return (
+                        <React.Fragment key={s.kode}>
+                          {/* Sub-klausul row — has its own Hasil/Catatan and
                             Keputusan (L/TB/G), like a butir but with heavier
                             styling to indicate it's the sub-clause header. */}
-                        <tr className="bg-canvas/40">
-                          <td className="px-4 py-3 border-b border-line align-top">
-                            <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md">
-                              {s.kode}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 border-b border-line align-top text-sm">
-                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                              {s.judul && (
-                                <span className="font-semibold text-navy-800 leading-snug">
-                                  {s.judul}
-                                </span>
-                              )}
-                              <span className="text-[11px] text-ink-400">
-                                · {s.butir.length} butir
+                          <tr className="bg-canvas/40">
+                            <td className="px-4 py-3 border-b border-line align-top">
+                              <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md">
+                                {s.kode}
                               </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 border-b border-line align-top">
-                            <div className="flex flex-col gap-1">
-                              {s.catatan_corrected &&
-                                s.original_hasil_catatan !== undefined && (
-                                  <span className="text-[11px] text-bad-fg">
-                                    <span className="line-through opacity-70">
-                                      {s.original_hasil_catatan || "(kosong)"}
-                                    </span>{" "}
-                                    <span className="text-ink-400 font-semibold">
-                                      (Rev)
-                                    </span>
+                            </td>
+                            <td className="px-4 py-3 border-b border-line align-top text-sm">
+                              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                {s.judul && (
+                                  <span className="font-semibold text-navy-800 leading-snug">
+                                    {s.judul}
                                   </span>
                                 )}
-                              <textarea
-                                rows={1}
-                                readOnly={subCatLocked}
-                                value={s.hasil_catatan || ""}
-                                onChange={(e) =>
-                                  updateLocalSubCatatan(
-                                    k.klausul,
-                                    s.kode,
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder={
-                                  subCatLocked ? "—" : "Catatan hasil…"
-                                }
-                                className={
-                                  subCatLocked ? hasilLockedCls : hasilEditCls
-                                }
-                              />
-                              {s.catatan_corrected &&
-                                s.catatan_corrected_by && (
-                                  <span className="text-[10px] text-navy-600">
-                                    oleh {s.catatan_corrected_by}
-                                  </span>
-                                )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 border-b border-line align-top">
-                            <div className="flex flex-col items-end gap-1">
-                              {s.is_corrected && (
-                                <span className="text-[11px] font-semibold text-bad-fg">
-                                  <span className="line-through">
-                                    {s.original_keputusan || "-"}
-                                  </span>{" "}
-                                  <span className="text-ink-400">(Rev)</span>
+                                <span className="text-[11px] text-ink-400">
+                                  · {s.butir.length} butir
                                 </span>
-                              )}
-                              <Seg
-                                value={s.keputusan}
-                                disabled={subLocked}
-                                onChange={(v) =>
-                                  updateLocalSubDecision(k.klausul, s.kode, v)
-                                }
-                              />
-                              {s.is_corrected && s.corrected_by && (
-                                <span className="text-[10px] text-navy-600">
-                                  oleh {s.corrected_by}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                        {s.butir.map((b) => {
-                          const butirLocked = isButirLockedFor(b);
-                          const butirCatLocked = isButirCatatanLocked(b);
-                          return (
-                            <tr key={`${s.kode}:${b.kode}`}>
-                              <td className="px-4 py-4 border-b border-line-soft align-top text-sm">
-                                {/* Butir kode intentionally hidden — the
-                                    sub-klausul row above already anchors the
-                                    numbering context, matching the Word draft
-                                    layout where butir rows have no code. */}
-                              </td>
-                              <td className="px-4 py-4 border-b border-line-soft align-top text-sm">
-                                <span className="text-ink-700 leading-relaxed">
-                                  {b.teks}
-                                </span>
-                              </td>
-                              <td className="px-4 py-4 border-b border-line-soft align-top">
-                                <div className="flex flex-col gap-1">
-                                  {b.catatan_corrected &&
-                                    b.original_hasil_catatan !== undefined && (
-                                      <span className="text-[11px] text-bad-fg">
-                                        <span className="line-through opacity-70">
-                                          {b.original_hasil_catatan ||
-                                            "(kosong)"}
-                                        </span>{" "}
-                                        <span className="text-ink-400 font-semibold">
-                                          (Rev)
-                                        </span>
-                                      </span>
-                                    )}
-                                  <textarea
-                                    rows={1}
-                                    readOnly={butirCatLocked}
-                                    value={b.hasil_catatan || ""}
-                                    onChange={(e) =>
-                                      updateLocalCatatan(
-                                        k.klausul,
-                                        s.kode,
-                                        b.kode,
-                                        e.target.value,
-                                      )
-                                    }
-                                    placeholder={
-                                      butirCatLocked ? "—" : "Catatan hasil…"
-                                    }
-                                    className={
-                                      butirCatLocked
-                                        ? hasilLockedCls
-                                        : hasilEditCls
-                                    }
-                                  />
-                                  {b.catatan_corrected &&
-                                    b.catatan_corrected_by && (
-                                      <span className="text-[10px] text-navy-600">
-                                        oleh {b.catatan_corrected_by}
-                                      </span>
-                                    )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-4 border-b border-line-soft align-top">
-                                <div className="flex flex-col items-end gap-1">
-                                  {b.is_corrected && (
-                                    <span className="text-[11px] font-semibold text-bad-fg">
-                                      <span className="line-through">
-                                        {b.original_keputusan || "-"}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 border-b border-line align-top">
+                              <div className="flex flex-col gap-1">
+                                {s.catatan_corrected &&
+                                  s.original_hasil_catatan !== undefined && (
+                                    <span className="text-[11px] text-bad-fg">
+                                      <span className="line-through opacity-70">
+                                        {s.original_hasil_catatan || "(kosong)"}
                                       </span>{" "}
-                                      <span className="text-ink-400">
+                                      <span className="text-ink-400 font-semibold">
                                         (Rev)
                                       </span>
                                     </span>
                                   )}
-                                  <Seg
-                                    value={b.keputusan}
-                                    disabled={butirLocked}
-                                    onChange={(v) =>
-                                      updateLocalDecision(
-                                        k.klausul,
-                                        s.kode,
-                                        b.kode,
-                                        v,
-                                      )
-                                    }
-                                  />
-                                  {b.is_corrected && b.corrected_by && (
+                                <textarea
+                                  rows={1}
+                                  readOnly={subCatLocked}
+                                  value={s.hasil_catatan || ""}
+                                  onChange={(e) =>
+                                    updateLocalSubCatatan(
+                                      k.klausul,
+                                      s.kode,
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder={
+                                    subCatLocked ? "—" : "Catatan hasil…"
+                                  }
+                                  className={
+                                    subCatLocked ? hasilLockedCls : hasilEditCls
+                                  }
+                                />
+                                {s.catatan_corrected &&
+                                  s.catatan_corrected_by && (
                                     <span className="text-[10px] text-navy-600">
-                                      oleh {b.corrected_by}
+                                      oleh {s.catatan_corrected_by}
                                     </span>
                                   )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {/* Structured data tables per sub-clause — renders
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 border-b border-line align-top">
+                              <div className="flex flex-col items-end gap-1">
+                                {s.is_corrected && (
+                                  <span className="text-[11px] font-semibold text-bad-fg">
+                                    <span className="line-through">
+                                      {s.original_keputusan || "-"}
+                                    </span>{" "}
+                                    <span className="text-ink-400">(Rev)</span>
+                                  </span>
+                                )}
+                                <Seg
+                                  value={s.keputusan}
+                                  disabled={subLocked}
+                                  onChange={(v) =>
+                                    updateLocalSubDecision(k.klausul, s.kode, v)
+                                  }
+                                />
+                                {s.is_corrected && s.corrected_by && (
+                                  <span className="text-[10px] text-navy-600">
+                                    oleh {s.corrected_by}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                          {s.butir.map((b) => {
+                            const butirLocked = isButirLockedFor(b);
+                            const butirCatLocked = isButirCatatanLocked(b);
+                            return (
+                              <tr key={`${s.kode}:${b.kode}`}>
+                                <td className="px-4 py-4 border-b border-line-soft align-top text-sm">
+                                  {/* Butir kode intentionally hidden — the
+                                    sub-klausul row above already anchors the
+                                    numbering context, matching the Word draft
+                                    layout where butir rows have no code. */}
+                                </td>
+                                <td className="px-4 py-4 border-b border-line-soft align-top text-sm">
+                                  <span className="text-ink-700 leading-relaxed">
+                                    {b.teks}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-4 border-b border-line-soft align-top">
+                                  <div className="flex flex-col gap-1">
+                                    {b.catatan_corrected &&
+                                      b.original_hasil_catatan !==
+                                        undefined && (
+                                        <span className="text-[11px] text-bad-fg">
+                                          <span className="line-through opacity-70">
+                                            {b.original_hasil_catatan ||
+                                              "(kosong)"}
+                                          </span>{" "}
+                                          <span className="text-ink-400 font-semibold">
+                                            (Rev)
+                                          </span>
+                                        </span>
+                                      )}
+                                    <textarea
+                                      rows={1}
+                                      readOnly={butirCatLocked}
+                                      value={b.hasil_catatan || ""}
+                                      onChange={(e) =>
+                                        updateLocalCatatan(
+                                          k.klausul,
+                                          s.kode,
+                                          b.kode,
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={
+                                        butirCatLocked ? "—" : "Catatan hasil…"
+                                      }
+                                      className={
+                                        butirCatLocked
+                                          ? hasilLockedCls
+                                          : hasilEditCls
+                                      }
+                                    />
+                                    {b.catatan_corrected &&
+                                      b.catatan_corrected_by && (
+                                        <span className="text-[10px] text-navy-600">
+                                          oleh {b.catatan_corrected_by}
+                                        </span>
+                                      )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4 border-b border-line-soft align-top">
+                                  <div className="flex flex-col items-end gap-1">
+                                    {b.is_corrected && (
+                                      <span className="text-[11px] font-semibold text-bad-fg">
+                                        <span className="line-through">
+                                          {b.original_keputusan || "-"}
+                                        </span>{" "}
+                                        <span className="text-ink-400">
+                                          (Rev)
+                                        </span>
+                                      </span>
+                                    )}
+                                    <Seg
+                                      value={b.keputusan}
+                                      disabled={butirLocked}
+                                      onChange={(v) =>
+                                        updateLocalDecision(
+                                          k.klausul,
+                                          s.kode,
+                                          b.kode,
+                                          v,
+                                        )
+                                      }
+                                    />
+                                    {b.is_corrected && b.corrected_by && (
+                                      <span className="text-[10px] text-navy-600">
+                                        oleh {b.corrected_by}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {/* Structured data tables per sub-clause — renders
                             nothing when the sub-clause has no template. */}
-                        <tr className="[&:has(td:empty)]:hidden">
-                          <td colSpan={4} className="p-0 empty:hidden">
-                            <div className="px-4 nav:px-5 py-3 empty:hidden">
-                              <TableInstanceEditor
-                                reportId={reportId}
-                                subClauseCode={s.kode}
-                                reportStatus={reportStatus}
-                                userRole={userRole}
-                              />
-                            </div>
-                          </td>
-                        </tr>
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          <tr className="[&:has(td:empty)]:hidden">
+                            <td colSpan={4} className="p-0 empty:hidden">
+                              <div className="px-4 nav:px-5 py-3 empty:hidden">
+                                <TableInstanceEditor
+                                  reportId={reportId}
+                                  subClauseCode={s.kode}
+                                  reportStatus={reportStatus}
+                                  userRole={userRole}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
 
             {/* Mobile / tablet: stacked cards — same data & handlers as the
                 table, laid out vertically with touch-sized controls. */}
             {isNarrow && (
-            <div className="divide-y divide-line-soft">
-              {k.sub_klausul.map((s) => {
-                const subLocked = isSubLockedFor(s);
-                const subCatLocked = isSubCatatanLocked(s);
-                return (
-                  <div key={`m-${s.kode}`}>
-                    {/* Sub-klausul header card */}
-                    <div className="bg-canvas/60 px-4 py-3.5 flex flex-col gap-2.5">
-                      <div className="flex items-start gap-2">
-                        <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md shrink-0">
-                          {s.kode}
-                        </span>
-                        <div className="min-w-0">
-                          {s.judul && (
-                            <div className="text-sm font-semibold text-navy-800 leading-snug">
-                              {s.judul}
+              <div className="divide-y divide-line-soft">
+                {k.sub_klausul.map((s) => {
+                  const subLocked = isSubLockedFor(s);
+                  const subCatLocked = isSubCatatanLocked(s);
+                  return (
+                    <div key={`m-${s.kode}`}>
+                      {/* Sub-klausul header card */}
+                      <div className="bg-canvas/60 px-4 py-3.5 flex flex-col gap-2.5">
+                        <div className="flex items-start gap-2">
+                          <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md shrink-0">
+                            {s.kode}
+                          </span>
+                          <div className="min-w-0">
+                            {s.judul && (
+                              <div className="text-sm font-semibold text-navy-800 leading-snug">
+                                {s.judul}
+                              </div>
+                            )}
+                            <div className="text-[11px] text-ink-400 mt-0.5">
+                              {s.butir.length} butir
                             </div>
-                          )}
-                          <div className="text-[11px] text-ink-400 mt-0.5">
-                            {s.butir.length} butir
                           </div>
                         </div>
-                      </div>
-                      {s.catatan_corrected &&
-                        s.original_hasil_catatan !== undefined && (
-                          <span className="text-[11px] text-bad-fg">
-                            <span className="line-through opacity-70">
-                              {s.original_hasil_catatan || "(kosong)"}
-                            </span>{" "}
-                            <span className="text-ink-400 font-semibold">
-                              (Rev)
-                            </span>
-                          </span>
-                        )}
-                      <textarea
-                        rows={1}
-                        readOnly={subCatLocked}
-                        value={s.hasil_catatan || ""}
-                        onChange={(e) =>
-                          updateLocalSubCatatan(k.klausul, s.kode, e.target.value)
-                        }
-                        placeholder={subCatLocked ? "—" : "Catatan hasil…"}
-                        className={subCatLocked ? hasilLockedCls : hasilEditCls}
-                      />
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] font-semibold text-ink-400 uppercase tracking-[0.06em]">
-                          Keputusan
-                          {s.is_corrected && (
-                            <span className="ml-2 normal-case font-semibold text-bad-fg">
-                              <span className="line-through">
-                                {s.original_keputusan || "-"}
+                        {s.catatan_corrected &&
+                          s.original_hasil_catatan !== undefined && (
+                            <span className="text-[11px] text-bad-fg">
+                              <span className="line-through opacity-70">
+                                {s.original_hasil_catatan || "(kosong)"}
                               </span>{" "}
-                              <span className="text-ink-400">(Rev)</span>
+                              <span className="text-ink-400 font-semibold">
+                                (Rev)
+                              </span>
                             </span>
                           )}
-                        </span>
-                        <Seg
-                          value={s.keputusan}
-                          disabled={subLocked}
-                          onChange={(v) =>
-                            updateLocalSubDecision(k.klausul, s.kode, v)
+                        <textarea
+                          rows={1}
+                          readOnly={subCatLocked}
+                          value={s.hasil_catatan || ""}
+                          onChange={(e) =>
+                            updateLocalSubCatatan(
+                              k.klausul,
+                              s.kode,
+                              e.target.value,
+                            )
+                          }
+                          placeholder={subCatLocked ? "—" : "Catatan hasil…"}
+                          className={
+                            subCatLocked ? hasilLockedCls : hasilEditCls
                           }
                         />
-                      </div>
-                      {s.is_corrected && s.corrected_by && (
-                        <span className="text-[10px] text-navy-600 text-right">
-                          oleh {s.corrected_by}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Butir cards */}
-                    {s.butir.map((b) => {
-                      const butirLocked = isButirLockedFor(b);
-                      const butirCatLocked = isButirCatatanLocked(b);
-                      return (
-                        <div
-                          key={`m-${s.kode}:${b.kode}`}
-                          className="px-4 py-3.5 border-t border-line-soft flex flex-col gap-2.5"
-                        >
-                          <div className="text-sm text-ink-700 leading-relaxed">
-                            {b.teks}
-                          </div>
-                          {b.catatan_corrected &&
-                            b.original_hasil_catatan !== undefined && (
-                              <span className="text-[11px] text-bad-fg">
-                                <span className="line-through opacity-70">
-                                  {b.original_hasil_catatan || "(kosong)"}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-ink-400 uppercase tracking-[0.06em]">
+                            Keputusan
+                            {s.is_corrected && (
+                              <span className="ml-2 normal-case font-semibold text-bad-fg">
+                                <span className="line-through">
+                                  {s.original_keputusan || "-"}
                                 </span>{" "}
-                                <span className="text-ink-400 font-semibold">
-                                  (Rev)
-                                </span>
+                                <span className="text-ink-400">(Rev)</span>
                               </span>
                             )}
-                          <textarea
-                            rows={1}
-                            readOnly={butirCatLocked}
-                            value={b.hasil_catatan || ""}
-                            onChange={(e) =>
-                              updateLocalCatatan(
-                                k.klausul,
-                                s.kode,
-                                b.kode,
-                                e.target.value,
-                              )
-                            }
-                            placeholder={butirCatLocked ? "—" : "Catatan hasil…"}
-                            className={
-                              butirCatLocked ? hasilLockedCls : hasilEditCls
+                          </span>
+                          <Seg
+                            value={s.keputusan}
+                            disabled={subLocked}
+                            onChange={(v) =>
+                              updateLocalSubDecision(k.klausul, s.kode, v)
                             }
                           />
-                          {b.catatan_corrected && b.catatan_corrected_by && (
-                            <span className="text-[10px] text-navy-600">
-                              oleh {b.catatan_corrected_by}
-                            </span>
-                          )}
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-ink-400 uppercase tracking-[0.06em]">
-                              Keputusan
-                              {b.is_corrected && (
-                                <span className="ml-2 normal-case font-semibold text-bad-fg">
-                                  <span className="line-through">
-                                    {b.original_keputusan || "-"}
+                        </div>
+                        {s.is_corrected && s.corrected_by && (
+                          <span className="text-[10px] text-navy-600 text-right">
+                            oleh {s.corrected_by}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Butir cards */}
+                      {s.butir.map((b) => {
+                        const butirLocked = isButirLockedFor(b);
+                        const butirCatLocked = isButirCatatanLocked(b);
+                        return (
+                          <div
+                            key={`m-${s.kode}:${b.kode}`}
+                            className="px-4 py-3.5 border-t border-line-soft flex flex-col gap-2.5"
+                          >
+                            <div className="text-sm text-ink-700 leading-relaxed">
+                              {b.teks}
+                            </div>
+                            {b.catatan_corrected &&
+                              b.original_hasil_catatan !== undefined && (
+                                <span className="text-[11px] text-bad-fg">
+                                  <span className="line-through opacity-70">
+                                    {b.original_hasil_catatan || "(kosong)"}
                                   </span>{" "}
-                                  <span className="text-ink-400">(Rev)</span>
+                                  <span className="text-ink-400 font-semibold">
+                                    (Rev)
+                                  </span>
                                 </span>
                               )}
-                            </span>
-                            <Seg
-                              value={b.keputusan}
-                              disabled={butirLocked}
-                              onChange={(v) =>
-                                updateLocalDecision(k.klausul, s.kode, b.kode, v)
+                            <textarea
+                              rows={1}
+                              readOnly={butirCatLocked}
+                              value={b.hasil_catatan || ""}
+                              onChange={(e) =>
+                                updateLocalCatatan(
+                                  k.klausul,
+                                  s.kode,
+                                  b.kode,
+                                  e.target.value,
+                                )
+                              }
+                              placeholder={
+                                butirCatLocked ? "—" : "Catatan hasil…"
+                              }
+                              className={
+                                butirCatLocked ? hasilLockedCls : hasilEditCls
                               }
                             />
+                            {b.catatan_corrected && b.catatan_corrected_by && (
+                              <span className="text-[10px] text-navy-600">
+                                oleh {b.catatan_corrected_by}
+                              </span>
+                            )}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold text-ink-400 uppercase tracking-[0.06em]">
+                                Keputusan
+                                {b.is_corrected && (
+                                  <span className="ml-2 normal-case font-semibold text-bad-fg">
+                                    <span className="line-through">
+                                      {b.original_keputusan || "-"}
+                                    </span>{" "}
+                                    <span className="text-ink-400">(Rev)</span>
+                                  </span>
+                                )}
+                              </span>
+                              <Seg
+                                value={b.keputusan}
+                                disabled={butirLocked}
+                                onChange={(v) =>
+                                  updateLocalDecision(
+                                    k.klausul,
+                                    s.kode,
+                                    b.kode,
+                                    v,
+                                  )
+                                }
+                              />
+                            </div>
+                            {b.is_corrected && b.corrected_by && (
+                              <span className="text-[10px] text-navy-600 text-right">
+                                oleh {b.corrected_by}
+                              </span>
+                            )}
                           </div>
-                          {b.is_corrected && b.corrected_by && (
-                            <span className="text-[10px] text-navy-600 text-right">
-                              oleh {b.corrected_by}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
 
-                    {/* Structured data tables per sub-clause (mobile) */}
-                    <div className="px-4 py-3 empty:hidden border-t border-line-soft [&:not(:has(*))]:hidden">
-                      <TableInstanceEditor
-                        reportId={reportId}
-                        subClauseCode={s.kode}
-                        reportStatus={reportStatus}
-                        userRole={userRole}
-                      />
+                      {/* Structured data tables per sub-clause (mobile) */}
+                      <div className="px-4 py-3 empty:hidden border-t border-line-soft [&:not(:has(*))]:hidden">
+                        <TableInstanceEditor
+                          reportId={reportId}
+                          subClauseCode={s.kode}
+                          reportStatus={reportStatus}
+                          userRole={userRole}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
             )}
           </section>
         </React.Fragment>
