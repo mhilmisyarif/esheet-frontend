@@ -18,6 +18,24 @@ import apiClient from "../api";
 import TableInstanceEditor from "./TableInstanceEditor";
 import SymbolStrip from "./SymbolStrip";
 
+const REPORT_STATUS = {
+  DRAFT: { label: "Draft", cls: "bg-neutral-bg text-neutral-fg" },
+  IN_PROGRESS: { label: "In Progress", cls: "bg-warn-bg text-warn-fg" },
+  APPROVED: { label: "Approved", cls: "bg-ok-bg text-ok-fg" },
+};
+
+function ReportStatusPill({ status }) {
+  const m = REPORT_STATUS[status] || REPORT_STATUS.DRAFT;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-xs font-semibold whitespace-nowrap ${m.cls}`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+      {m.label}
+    </span>
+  );
+}
+
 const SEG_OPTS = ["L", "TB", "G"];
 const SEG_TITLE = { L: "Lulus", TB: "Tidak Berlaku", G: "Gagal" };
 const SEG_ACTIVE = {
@@ -26,11 +44,86 @@ const SEG_ACTIVE = {
   G: "bg-[#d12c45] text-white",
 };
 
-// Segmented L / TB / G control
+function getKlausulDecisionStatus(k) {
+  let countG = 0;
+  let countL = 0;
+  let countTB = 0;
+  let totalDecisions = 0;
+
+  (k?.sub_klausul || []).forEach((s) => {
+    if (s.keputusan === "G") countG++;
+    else if (s.keputusan === "L") countL++;
+    else if (s.keputusan === "TB") countTB++;
+    if (s.keputusan) totalDecisions++;
+
+    (s.butir || []).forEach((b) => {
+      if (b.keputusan === "G") countG++;
+      else if (b.keputusan === "L") countL++;
+      else if (b.keputusan === "TB") countTB++;
+      if (b.keputusan) totalDecisions++;
+    });
+  });
+
+  if (countG > 0) {
+    return {
+      status: "red",
+      label: "GAGAL",
+      badgeCls: "bg-bad-bg text-bad-fg border-bad-fg/40",
+      pillCls: "bg-bad-bg text-bad-fg border-bad-fg/30",
+    };
+  }
+  if (countL > 0) {
+    return {
+      status: "green",
+      label: "LULUS",
+      badgeCls: "bg-ok-bg text-ok-fg border-ok-fg/40",
+      pillCls: "bg-ok-bg text-ok-fg border-ok-fg/30",
+    };
+  }
+  if (countTB > 0 && totalDecisions === countTB) {
+    return {
+      status: "gray",
+      label: "TB",
+      badgeCls: "bg-warn-bg text-warn-fg border-warn-fg/40",
+      pillCls: "bg-warn-bg text-warn-fg border-warn-fg/30",
+    };
+  }
+  return {
+    status: "neutral",
+    label: null,
+    badgeCls: "bg-navy-50 text-navy-800 border-navy-100",
+    pillCls: "",
+  };
+}
+
+function getSubKodeBadgeCls(keputusan) {
+  if (keputusan === "G") return "bg-bad-bg text-bad-fg border-bad-fg/40";
+  if (keputusan === "L") return "bg-ok-bg text-ok-fg border-ok-fg/40";
+  if (keputusan === "TB") return "bg-warn-bg text-warn-fg border-warn-fg/40";
+  return "bg-white text-navy-800 border-line";
+}
+
+// Animated segmented L / TB / G control
 function Seg({ value, onChange, small, disabled }) {
+  const opts = SEG_OPTS;
+  const activeIdx = opts.indexOf(value);
+
   return (
-    <div className="inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5">
-      {SEG_OPTS.map((o) => {
+    <div className={`relative inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+      {/* Sliding background pill */}
+      {activeIdx !== -1 && (
+        <span
+          aria-hidden="true"
+          className={`absolute top-[3px] bottom-[3px] rounded-[7px] transition-all duration-200 ease-out pointer-events-none ${SEG_ACTIVE[value]}`}
+          style={{
+            width: small
+              ? 'calc(33.333% - 2px)'
+              : 'calc(33.333% - 2px)',
+            left: `calc(${activeIdx} * 33.333% + 3px)`,
+          }}
+        />
+      )}
+      {opts.map((o) => {
         const active = value === o;
         return (
           <button
@@ -39,16 +132,16 @@ function Seg({ value, onChange, small, disabled }) {
             disabled={disabled}
             title={SEG_TITLE[o]}
             onClick={() => onChange(o)}
-            className={`inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
+            className={`relative z-10 inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
               small
-                ? "min-w-9 h-9 px-2.5 text-xs nav:min-w-7 nav:h-6 nav:px-2 nav:text-[11px]"
-                : "min-w-11 h-10 px-3 text-[13px] nav:min-w-9 nav:h-[30px] nav:px-2.5 nav:text-xs"
+                ? 'min-w-9 h-9 px-2.5 text-xs nav:min-w-7 nav:h-6 nav:px-2 nav:text-[11px]'
+                : 'min-w-11 h-10 px-3 text-[13px] nav:min-w-9 nav:h-[30px] nav:px-2.5 nav:text-xs'
             } ${
               active
-                ? SEG_ACTIVE[o]
+                ? 'text-white'
                 : disabled
-                  ? "text-ink-300 cursor-not-allowed"
-                  : "text-ink-500 hover:bg-navy-50 hover:text-navy-800"
+                  ? 'text-ink-300 cursor-not-allowed'
+                  : 'text-ink-500 hover:text-navy-800'
             }`}
           >
             {o}
@@ -105,6 +198,9 @@ export default function KlausulButirTable({
   const [imagesState, setImagesState] = useState(report.images || []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [technicians, setTechnicians] = useState([]);
+
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle'|'saving'|'saved'|'error'|'offline'
+  const debounceRef = useRef(null);
 
   const dirtyRef = useRef({});
   const persistedRef = useRef({});
@@ -203,6 +299,68 @@ export default function KlausulButirTable({
     dirtyRef.current = { ...dirtyRef.current, [key]: true };
   }, []);
 
+  const pendingDataRef = useRef(null);
+
+  const getFullDataWithUpdates = useCallback(
+    (updatedLocalClauses) => {
+      const list = fullReport?.data || [];
+      return list.map((k) => {
+        const match = updatedLocalClauses.find((loc) => loc.klausul === k.klausul);
+        return match ? JSON.parse(JSON.stringify(match)) : k;
+      });
+    },
+    [fullReport?.data],
+  );
+
+  const triggerAutoSave = useCallback(
+    (explicitData) => {
+      if (reportStatus === "APPROVED" || !reportId) return;
+
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+
+      setSaveStatus("saving");
+
+      debounceRef.current = setTimeout(async () => {
+        if (!navigator.onLine) {
+          setSaveStatus("offline");
+          return;
+        }
+
+        const dataToSave =
+          explicitData ||
+          pendingDataRef.current ||
+          getFullDataWithUpdates(localKlausulArr);
+        if (!dataToSave || dataToSave.length === 0) return;
+
+        try {
+          await apiClient.patch(`/reports/${reportId}/data`, {
+            data: dataToSave,
+            images: imagesState,
+          });
+          dirtyRef.current = {};
+          setSaveStatus("saved");
+          setTimeout(() => setSaveStatus((s) => (s === "saved" ? "idle" : s)), 3000);
+        } catch (e) {
+          console.error("Auto-save error", e);
+          setSaveStatus("error");
+        }
+      }, 600);
+    },
+    [reportId, reportStatus, imagesState, localKlausulArr, getFullDataWithUpdates],
+  );
+
+  // Online / offline listeners
+  useEffect(() => {
+    const handleOnline = () => setSaveStatus((s) => s === 'offline' ? 'idle' : s);
+    const handleOffline = () => setSaveStatus('offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // NOTE: butir kode (a, b, c…) repeats across sub-klausul in the new
   // template format, so butir updates must be scoped by subKode too —
   // matching on butir kode alone would update the same letter in every
@@ -233,6 +391,9 @@ export default function KlausulButirTable({
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport(next);
     markDirty(`${subKode}:${butirKode}`);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function updateLocalCatatan(klausulCode, subKode, butirKode, text) {
@@ -264,6 +425,9 @@ export default function KlausulButirTable({
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport(next);
     markDirty(`${subKode}:${butirKode}`);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function updateLocalSubDecision(klausulCode, subKode, decision) {
@@ -287,6 +451,9 @@ export default function KlausulButirTable({
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport(next);
     markDirty(`sub-${subKode}`);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function updateLocalSubCatatan(klausulCode, subKode, text) {
@@ -310,21 +477,25 @@ export default function KlausulButirTable({
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport(next);
     markDirty(`sub-${subKode}`);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function updateKlausulMeta(klausulCode, changes) {
     const next = JSON.parse(JSON.stringify(localKlausulArr));
-    let changedClause = null;
     next.forEach((k) => {
       if (k.klausul === klausulCode) {
         k.meta = { ...(k.meta || {}), ...changes };
         k.last_meta_modified_at = new Date().toISOString();
-        changedClause = k;
       }
     });
     setLocalKlausulArr(next);
-    onChangeReport && onChangeReport([changedClause]);
+    onChangeReport && onChangeReport(next);
     markDirty(`meta-${klausulCode}`);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   const isButirFilled = (b) => !!b.keputusan;
@@ -334,28 +505,29 @@ export default function KlausulButirTable({
       return { ok: true, count: 0 };
     }
 
-    if (!reportId || Object.keys(dirtyRef.current).length === 0) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    const currentReportData =
+      pendingDataRef.current || getFullDataWithUpdates(localKlausulArr);
+    const currentImagesData = imagesState;
+
+    if (!reportId || !currentReportData || currentReportData.length === 0) {
       toast("Tidak ada perubahan untuk disimpan");
       return { ok: true, count: 0 };
     }
 
-    const currentReportData = fullReport.data;
-    const currentImagesData = imagesState;
-
     setIsAutosaving(true);
+    setSaveStatus("saving");
     try {
       await apiClient.patch(`/reports/${reportId}/data`, {
         data: currentReportData,
         images: currentImagesData,
       });
       dirtyRef.current = {};
-      toast.success("Perubahan berhasil disimpan");
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus((s) => (s === "saved" ? "idle" : s)), 3000);
       return { ok: true, count: 1 };
     } catch (e) {
-      // 403 with a "locked" message means the report was approved (locked)
-      // server-side after this page loaded — e.g. the engineer approved the
-      // final klausul in this same session. The local edits can never be
-      // saved, so drop them instead of retrying every autosave tick.
       const serverMsg = e.response?.data?.error || "";
       if (e.response?.status === 403 && /locked|approved/i.test(serverMsg)) {
         dirtyRef.current = {};
@@ -364,13 +536,14 @@ export default function KlausulButirTable({
         });
         return { ok: true, count: 0 };
       }
+      setSaveStatus("error");
       toast.error("Gagal menyimpan perubahan");
       console.error("flushAutosave error", e);
       return { ok: false, error: e };
     } finally {
       setIsAutosaving(false);
     }
-  }, [reportId, fullReport, imagesState, reportStatus]);
+  }, [reportId, imagesState, reportStatus, localKlausulArr, getFullDataWithUpdates]);
 
   useEffect(() => {
     if (typeof onRegisterFlush === "function") {
@@ -434,6 +607,9 @@ export default function KlausulButirTable({
     });
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport([changedClause]);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function bulkSetSubclause(klausulCode, subKode, value) {
@@ -456,6 +632,9 @@ export default function KlausulButirTable({
     });
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport([changedClause]);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   function resetClause(klausulCode) {
@@ -484,6 +663,9 @@ export default function KlausulButirTable({
     });
     setLocalKlausulArr(next);
     onChangeReport && onChangeReport([changedClause]);
+    const allData = getFullDataWithUpdates(next);
+    pendingDataRef.current = allData;
+    triggerAutoSave(allData);
   }
 
   const dirtyCount = Object.keys(dirtyRef.current).length;
@@ -524,43 +706,81 @@ export default function KlausulButirTable({
             className="bg-paper border border-line rounded-2xl shadow-card overflow-hidden"
           >
             {/* CLAUSE TITLE ROW — the actual clause heading ("8 PENANDAAN") */}
-            <div className="flex items-start gap-3 px-4 nav:px-5 pt-4 nav:pt-5 pb-3">
-              {!locked && (
-                <div className="relative shrink-0" ref={menuRef}>
-                  <button
-                    onClick={() => setMenuOpen((o) => !o)}
-                    aria-label="Menu klausul"
-                    className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-ink-400 hover:bg-navy-50 hover:text-navy-800 transition-colors ${
-                      menuOpen ? "bg-navy-50 text-navy-800" : ""
-                    }`}
-                  >
-                    <FiMoreHorizontal size={18} />
-                  </button>
-                  {menuOpen && (
-                    <div className="absolute left-0 top-10 min-w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5 z-20">
-                      <button
-                        onClick={() => resetClause(k.klausul)}
-                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
-                      >
-                        <FiRotateCcw size={14} /> Reset klausul
-                      </button>
-                      <button
-                        onClick={handleDeleteSample}
-                        className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
-                      >
-                        <FiTrash2 size={14} /> Hapus sample
-                      </button>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 nav:px-5 pt-4 nav:pt-5 pb-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {!locked && (
+                  <div className="relative shrink-0" ref={menuRef}>
+                    <button
+                      onClick={() => setMenuOpen((o) => !o)}
+                      aria-label="Menu klausul"
+                      className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-ink-400 hover:bg-navy-50 hover:text-navy-800 transition-colors ${
+                        menuOpen ? "bg-navy-50 text-navy-800" : ""
+                      }`}
+                    >
+                      <FiMoreHorizontal size={18} />
+                    </button>
+                    {menuOpen && (
+                      <div className="absolute left-0 top-10 min-w-[200px] bg-paper border border-line rounded-xl shadow-pop p-1.5 z-20">
+                        <button
+                          onClick={() => resetClause(k.klausul)}
+                          className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+                        >
+                          <FiRotateCcw size={14} /> Reset klausul
+                        </button>
+                        <button
+                          onClick={handleDeleteSample}
+                          className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-bad-fg hover:bg-[#fef0f3] text-left transition-colors"
+                        >
+                          <FiTrash2 size={14} /> Hapus sample
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(() => {
+                  const kStatus = getKlausulDecisionStatus(k);
+                  return (
+                    <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`font-mono font-bold text-[15px] px-2.5 py-1 rounded-lg border transition-colors ${kStatus.badgeCls}`}
+                        >
+                          {k.klausul}
+                        </span>
+                        {kStatus.label && (
+                          <span
+                            className={`font-mono font-bold text-[11px] uppercase tracking-wider px-2 py-0.5 rounded-full border ${kStatus.pillCls}`}
+                          >
+                            {kStatus.label}
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="text-xl nav:text-2xl font-bold text-navy-900 uppercase tracking-tight break-words">
+                        {k.judul}
+                      </h2>
                     </div>
+                  );
+                })()}
+              </div>
+
+              {/* Top-right of container: Save indicator & Report Status Pill */}
+              <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
+                  {saveStatus === "saving" || isAutosaving ? (
+                    <><FaSpinner className="animate-spin" size={12} /><span>Menyimpan…</span></>
+                  ) : saveStatus === "saved" ? (
+                    <><FiCheck size={12} className="text-ok-fg" /><span className="text-ok-fg">Tersimpan</span></>
+                  ) : saveStatus === "error" ? (
+                    <><span className="w-1.5 h-1.5 rounded-full bg-bad-fg" /><span className="text-bad-fg">Gagal menyimpan</span></>
+                  ) : saveStatus === "offline" ? (
+                    <><span className="w-1.5 h-1.5 rounded-full bg-warn-fg" /><span className="text-warn-fg">Anda sedang offline</span></>
+                  ) : dirtyCount > 0 ? (
+                    <><span className="w-1.5 h-1.5 rounded-full bg-warn-fg/60 animate-pulse" /><span>Perubahan belum tersimpan</span></>
+                  ) : (
+                    <><span className="w-1.5 h-1.5 rounded-full bg-ok-fg/60" /><span>Semua tersimpan</span></>
                   )}
-                </div>
-              )}
-              <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="font-mono font-bold text-[15px] text-navy-800 bg-navy-50 border border-navy-100 px-2.5 py-1 rounded-lg">
-                  {k.klausul}
                 </span>
-                <h2 className="text-xl nav:text-2xl font-bold text-navy-900 uppercase tracking-tight break-words">
-                  {k.judul}
-                </h2>
+                <ReportStatusPill status={reportStatus} />
               </div>
             </div>
 
@@ -576,24 +796,14 @@ export default function KlausulButirTable({
                     <FiLock size={13} /> Terkunci
                   </span>
                 ) : (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 text-xs text-ink-400">
-                      {isAutosaving ? (
-                        <FaSpinner className="animate-spin" size={12} />
-                      ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-ok-fg/60" />
-                      )}
-                      {autosaveText}
-                    </span>
-                    <span className="flex items-center gap-2 text-xs text-ink-400">
-                      <span>Set semua</span>
-                      <Seg
-                        value={null}
-                        onChange={(v) => bulkSetKlausul(k.klausul, v)}
-                        small
-                      />
-                    </span>
-                  </>
+                  <span className="flex items-center gap-2 text-xs text-ink-400">
+                    <span>Set semua</span>
+                    <Seg
+                      value={null}
+                      onChange={(v) => bulkSetKlausul(k.klausul, v)}
+                      small
+                    />
+                  </span>
                 )}
               </div>
             </div>
@@ -715,7 +925,7 @@ export default function KlausulButirTable({
                             styling to indicate it's the sub-clause header. */}
                           <tr className="bg-canvas/40">
                             <td className="px-4 py-3 border-b border-line align-top">
-                              <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md">
+                              <span className={`font-mono font-bold text-[13px] px-2 py-0.5 rounded-md border transition-colors ${getSubKodeBadgeCls(s.keputusan)}`}>
                                 {s.kode}
                               </span>
                             </td>
@@ -923,7 +1133,7 @@ export default function KlausulButirTable({
                       {/* Sub-klausul header card */}
                       <div className="bg-canvas/60 px-4 py-3.5 flex flex-col gap-2.5">
                         <div className="flex items-start gap-2">
-                          <span className="font-mono font-bold text-[13px] text-navy-800 bg-white border border-line px-2 py-0.5 rounded-md shrink-0">
+                          <span className={`font-mono font-bold text-[13px] px-2 py-0.5 rounded-md border shrink-0 transition-colors ${getSubKodeBadgeCls(s.keputusan)}`}>
                             {s.kode}
                           </span>
                           <div className="min-w-0">
