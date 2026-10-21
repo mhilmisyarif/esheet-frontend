@@ -43,7 +43,9 @@ export default function SidebarClauses({ steps = [], activeIndex = 0, onSelect }
               >
                 {s.klausul}
               </span>
-              {s.missingCount > 0 ? (
+              {s.status === "red" ? (
+                <span className="text-xs font-bold text-bad-fg">G</span>
+              ) : s.missingCount > 0 ? (
                 <span className="flex items-center gap-0.5 text-xs font-semibold text-warn-fg">
                   <FiAlertCircle size={13} />
                   {s.missingCount}
@@ -88,7 +90,11 @@ export default function SidebarClauses({ steps = [], activeIndex = 0, onSelect }
                 <div className="text-xs text-ink-400">{s.subCount} langkah</div>
               </div>
 
-              {s.missingCount > 0 ? (
+              {s.status === "red" ? (
+                <span className="text-xs font-bold text-bad-fg shrink-0">
+                  GAGAL
+                </span>
+              ) : s.missingCount > 0 ? (
                 <span className="flex items-center gap-1 text-xs font-semibold text-warn-fg shrink-0">
                   <FiAlertCircle size={14} />
                   {s.missingCount}

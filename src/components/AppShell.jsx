@@ -2,17 +2,16 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
-  FiGrid,
-  FiUser,
-  FiClipboard,
-  FiBookOpen,
-  FiBell,
-  FiChevronDown,
-  FiLogOut,
-  FiSettings,
-  FiX,
-  FiMenu,
-} from "react-icons/fi";
+  LayoutDashboard,
+  ClipboardList,
+  BookOpen,
+  User,
+  Menu as MenuIcon,
+  X as XIcon,
+  ChevronDown,
+  LogOut,
+  Settings,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import NotificationBell from "./NotificationBell";
 import logoUrl from "../assets/logo.png";
@@ -22,48 +21,48 @@ const TECH_NAV = [
   {
     key: "dashboard",
     label: "Dashboard",
-    Icon: FiGrid,
+    Icon: LayoutDashboard,
     path: "/technician-dashboard",
   },
-  { key: "profile", label: "Profile", Icon: FiUser, path: null },
   {
     key: "registration",
     label: "Registration",
-    Icon: FiClipboard,
+    Icon: ClipboardList,
     path: "/create-report",
   },
+  { key: "profile", label: "Profile", Icon: User, path: null },
 ];
 
 const ENGINEER_NAV = [
   {
     key: "dashboard",
     label: "Dashboard",
-    Icon: FiGrid,
+    Icon: LayoutDashboard,
     path: "/engineer-dashboard",
   },
   {
     key: "standards",
     label: "Manage Standards",
-    Icon: FiBookOpen,
+    Icon: BookOpen,
     path: "/manage-standards",
   },
-  { key: "profile", label: "Profile", Icon: FiUser, path: null },
+  { key: "profile", label: "Profile", Icon: User, path: null },
 ];
 
 const ADMIN_NAV = [
   {
     key: "dashboard",
     label: "Dashboard",
-    Icon: FiGrid,
-    path: "/admin-dashboard", // Updated path for Admin
+    Icon: LayoutDashboard,
+    path: "/admin-dashboard",
   },
   {
     key: "standards",
     label: "Manage Standards",
-    Icon: FiBookOpen,
+    Icon: BookOpen,
     path: "/manage-standards",
   },
-  { key: "profile", label: "Profile", Icon: FiUser, path: null },
+  { key: "profile", label: "Profile", Icon: User, path: null },
 ];
 
 function titleCase(s) {
@@ -84,38 +83,59 @@ function Sidebar({ navOpen, onClose, nav, deskCollapsed }) {
     navigate(item.path);
   };
 
+  const isMini = deskCollapsed && !navOpen;
+
   return (
     <aside
-      className={`flex flex-col bg-navy-50 border-r border-line
-        fixed inset-y-0 left-0 w-[280px] z-[60]
-        transition-transform duration-200 ease-out
+      className={`flex flex-col bg-paper border-r border-line-soft
+        fixed inset-y-0 left-0 z-[60]
+        transition-[width,transform] duration-200 ease-out
         ${
           navOpen
-            ? "translate-x-0 shadow-[12px_0_36px_rgba(7,25,63,0.18)]"
+            ? "translate-x-0 shadow-[12px_0_36px_rgba(7,25,63,0.18)] w-[280px]"
             : "-translate-x-full"
         }
-        ${
-          deskCollapsed
-            ? "nav:hidden"
-            : "nav:sticky nav:top-0 nav:h-screen nav:w-[264px] nav:translate-x-0 nav:shadow-none nav:flex"
-        }`}
+        nav:sticky nav:top-0 nav:h-screen nav:translate-x-0 nav:shadow-none nav:flex
+        ${deskCollapsed ? "nav:w-[76px]" : "nav:w-[264px]"}`}
     >
+      {/* Mobile close button */}
       <button
         onClick={onClose}
         aria-label="Close menu"
-        className="nav:hidden absolute top-3.5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center text-ink-500 hover:bg-black/5"
+        className="nav:hidden absolute top-5 right-3.5 w-9 h-9 rounded-full flex items-center justify-center text-ink-500 hover:bg-navy-50 cursor-pointer"
       >
-        <FiX size={20} />
+        <XIcon size={19} />
       </button>
 
-      <div className="flex flex-col items-center gap-1.5 px-6 pt-5 pb-7">
-        <img src={logoUrl} alt="" className="w-[132px] h-auto" />
-        <div className="font-mono font-bold text-[22px] tracking-[-0.02em] text-navy-900">
-          E-Datasheet
-        </div>
+      {/* Brand Header */}
+      <div
+        className={`flex items-center border-b border-line-soft transition-all duration-200 ${
+          isMini
+            ? "justify-center px-2 py-5"
+            : "gap-3 px-5 py-5 pr-12 nav:pr-5"
+        }`}
+      >
+        <img
+          src={logoUrl}
+          alt="Logo Sucofindo"
+          title="E-Datasheet"
+          className={`${
+            isMini ? "w-11 max-h-9" : "w-[48px] max-h-10"
+          } h-auto object-contain shrink-0`}
+        />
+        {!isMini && (
+          <span className="font-mono font-bold text-[19px] tracking-tight text-navy-900 truncate">
+            E-Datasheet
+          </span>
+        )}
       </div>
 
-      <nav className="flex-1 flex flex-col gap-0.5 px-4 py-4">
+      {/* Navigation List */}
+      <nav
+        className={`flex-1 flex flex-col gap-1.5 py-4 transition-all duration-200 ${
+          isMini ? "px-0 items-center overflow-visible" : "px-3 overflow-y-auto"
+        }`}
+      >
         {nav.map((item) => {
           const active =
             item.path &&
@@ -127,23 +147,79 @@ function Sidebar({ navOpen, onClose, nav, deskCollapsed }) {
             <button
               key={item.key}
               onClick={() => handleNav(item)}
-              className={`flex items-center gap-3.5 h-14 px-4 rounded-xl text-base font-medium text-left w-full transition-colors
-                ${
-                  active
-                    ? "bg-navy-800 text-white"
-                    : "text-navy-700 hover:bg-navy-800/[0.06]"
-                }`}
+              className={`flex items-center transition-all duration-150 relative group cursor-pointer ${
+                isMini
+                  ? "w-full h-12 justify-center"
+                  : "w-full h-11 px-3.5 gap-3.5 rounded-xl text-[14px] text-left " +
+                    (active
+                      ? "bg-navy-100/70 text-navy-900 font-semibold shadow-xs"
+                      : "text-ink-600 hover:text-navy-900 hover:bg-navy-50/80 font-medium")
+              }`}
             >
-              <item.Icon size={22} className="shrink-0" />
-              <span>{item.label}</span>
+              {isMini ? (
+                <div
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-150 ${
+                    active
+                      ? "bg-navy-100/70 text-navy-900 shadow-xs"
+                      : "text-ink-400 group-hover:text-navy-900 group-hover:bg-navy-50/80"
+                  }`}
+                >
+                  <item.Icon
+                    size={20}
+                    className={`shrink-0 transition-colors ${
+                      active ? "text-navy-800 stroke-[2.2]" : "text-ink-400 stroke-[1.8]"
+                    }`}
+                  />
+                </div>
+              ) : (
+                <>
+                  <item.Icon
+                    size={20}
+                    className={`shrink-0 transition-colors ${
+                      active ? "text-navy-800 stroke-[2.2]" : "text-ink-400 stroke-[1.8]"
+                    }`}
+                  />
+                  <span className="truncate">{item.label}</span>
+                </>
+              )}
+
+              {/* Vertical active indicator bar on the right border of sidebar in mini mode */}
+              {isMini && active && (
+                <span className="absolute right-0 top-1/2 -translate-y-1/2 w-[3.5px] h-7 bg-navy-800 rounded-l-full" />
+              )}
+
+              {/* Floating pill tooltip on hover (delay-300 for hover lama, navy blue palette) */}
+              {isMini && (
+                <div className="hidden nav:flex items-center absolute left-full ml-2.5 top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 delay-300 z-[90]">
+                  <div className="w-2 h-2 bg-navy-800 rotate-45 -mr-1 shrink-0" />
+                  <div className="bg-navy-800 text-white text-[12px] font-medium px-3 py-1.5 rounded-lg whitespace-nowrap shadow-pop tracking-wide border border-navy-700/60">
+                    {item.label}
+                  </div>
+                </div>
+              )}
             </button>
           );
         })}
       </nav>
 
-      <div className="flex items-center justify-between px-4 py-4 border-t border-line text-xs text-ink-400">
-        <span>va.0.0.1</span>
-        <span>&copy; SBU Lab - Lab Teknik</span>
+      {/* Footer */}
+      <div
+        className={`border-t border-line-soft text-ink-400 transition-all duration-200 ${
+          isMini
+            ? "flex flex-col items-center justify-center py-4 text-[11px]"
+            : "flex items-center justify-between px-5 py-4 text-xs"
+        }`}
+      >
+        {isMini ? (
+          <span title="va.0.0.1 © SBU Lab - Lab Teknik" className="font-mono text-ink-400 text-center">
+            v1
+          </span>
+        ) : (
+          <>
+            <span className="font-mono">va.0.0.1</span>
+            <span>&copy; SBU Lab - Lab Teknik</span>
+          </>
+        )}
       </div>
     </aside>
   );
@@ -167,16 +243,16 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
   const email = user?.email || "";
 
   return (
-    <header className="h-[68px] nav:h-20 px-4 nav:px-8 bg-paper border-b border-line flex items-center justify-between sticky top-0 z-30">
+    <header className="h-[68px] nav:h-20 px-4 nav:px-8 bg-paper border-b border-line-soft flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-4 min-w-0">
         {/* Hamburger: opens the drawer on mobile, collapses/expands the
             sidebar on desktop — always visible. */}
         <button
           onClick={onOpenMenu}
           aria-label="Toggle menu"
-          className="w-11 h-11 rounded-xl flex items-center justify-center text-navy-800 hover:bg-navy-50 shrink-0"
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-navy-800 hover:bg-navy-50 shrink-0 cursor-pointer transition-colors"
         >
-          <FiMenu size={22} />
+          <MenuIcon size={20} />
         </button>
         <div className="flex items-center gap-2 text-[13px] text-ink-400 min-w-0">
           {crumbs.map((c, i) => {
@@ -205,13 +281,10 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
       <div className="flex items-center gap-2 shrink-0">
         <NotificationBell />
 
-        {/* ref hanya membungkus area profil — kalau membungkus bell juga,
-            klik bell tidak menutup dropdown profil (dua dropdown tumpang
-            tindih terbuka bersamaan) */}
         <div className="relative" ref={ref}>
           <button
             onClick={() => setPdOpen((o) => !o)}
-            className="flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-full hover:bg-navy-50"
+            className="flex items-center gap-3 pl-1.5 pr-3 py-1.5 rounded-full hover:bg-navy-50 cursor-pointer transition-colors"
           >
             <img
               src={avatarUrl}
@@ -219,14 +292,14 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
               className="w-10 h-10 rounded-full object-cover border-2 border-paper shadow-[0_0_0_1px_var(--color-line)]"
             />
             <div className="hidden nav:block text-right">
-              <div className="text-[15px] font-medium text-navy-800 leading-tight">
+              <div className="text-[14px] font-semibold text-navy-800 leading-tight">
                 {name}
               </div>
               <div className="text-xs text-ink-400 leading-tight mt-0.5">
                 {role}
               </div>
             </div>
-            <FiChevronDown
+            <ChevronDown
               size={16}
               className={`hidden nav:block text-ink-400 transition-transform ${
                 pdOpen ? "rotate-180" : ""
@@ -235,7 +308,7 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
           </button>
 
           {pdOpen && (
-            <div className="absolute top-full mt-2 right-0 min-w-[240px] bg-paper border border-line rounded-xl shadow-pop overflow-hidden z-40">
+            <div className="absolute top-full mt-2 right-0 min-w-[240px] bg-paper border border-line-soft rounded-2xl shadow-pop overflow-hidden z-40">
               <div className="flex items-center gap-3 p-4 border-b border-line-soft">
                 <img
                   src={avatarUrl}
@@ -256,27 +329,27 @@ function Topbar({ crumbs, onOpenMenu, onRequestLogout }) {
                   setPdOpen(false);
                   toast("Halaman ini belum tersedia.");
                 }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-navy-800 text-left hover:bg-navy-50"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-navy-800 text-left hover:bg-navy-50 cursor-pointer transition-colors"
               >
-                <FiUser size={18} /> View profile
+                <User size={17} /> View profile
               </button>
               <button
                 onClick={() => {
                   setPdOpen(false);
                   toast("Halaman ini belum tersedia.");
                 }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-navy-800 text-left hover:bg-navy-50"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-navy-800 text-left hover:bg-navy-50 cursor-pointer transition-colors"
               >
-                <FiSettings size={18} /> Settings
+                <Settings size={17} /> Settings
               </button>
               <button
                 onClick={() => {
                   setPdOpen(false);
                   onRequestLogout();
                 }}
-                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-bad-fg text-left border-t border-line-soft hover:bg-[#fef0f3]"
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-bad-fg text-left border-t border-line-soft hover:bg-[#fef0f3] cursor-pointer transition-colors"
               >
-                <FiLogOut size={18} /> Logout
+                <LogOut size={17} /> Logout
               </button>
             </div>
           )}
@@ -290,7 +363,7 @@ function LogoutConfirm({ onCancel, onConfirm }) {
   return (
     <div
       onClick={onCancel}
-      className="fixed inset-0 z-[100] bg-[rgba(7,25,63,0.42)] flex items-center justify-center p-6"
+      className="fixed inset-0 z-[100] bg-[rgba(7,25,63,0.42)] flex items-center justify-center p-6 backdrop-blur-xs"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -308,23 +381,23 @@ function LogoutConfirm({ onCancel, onConfirm }) {
           <button
             onClick={onCancel}
             aria-label="Close"
-            className="w-11 h-11 rounded-full flex items-center justify-center text-navy-700 hover:bg-navy-50 shrink-0"
+            className="w-10 h-10 rounded-full flex items-center justify-center text-navy-700 hover:bg-navy-50 shrink-0 cursor-pointer transition-colors"
           >
-            <FiX size={20} />
+            <XIcon size={18} />
           </button>
         </div>
         <div className="flex justify-end gap-2 px-7 pb-6">
           <button
             onClick={onCancel}
-            className="inline-flex items-center justify-center h-11 px-[18px] rounded-xl text-sm font-semibold bg-navy-50 text-navy-800 hover:bg-navy-100"
+            className="inline-flex items-center justify-center h-11 px-[18px] rounded-xl text-sm font-semibold bg-navy-50 text-navy-800 hover:bg-navy-100 cursor-pointer transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-white text-bad-fg border-[1.5px] border-bad-fg hover:bg-[#fef0f3]"
+            className="inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-white text-bad-fg border-[1.5px] border-bad-fg hover:bg-[#fef0f3] cursor-pointer transition-colors"
           >
-            <FiLogOut size={16} /> Logout
+            <LogOut size={16} /> Logout
           </button>
         </div>
       </div>
@@ -338,18 +411,38 @@ export default function AppShell({
 }) {
   const [navOpen, setNavOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
-  // Desktop sidebar collapse — persisted so the preference survives reloads
-  const [deskCollapsed, setDeskCollapsed] = useState(
-    () => localStorage.getItem("sidebar-collapsed") === "1",
-  );
+
+  // Auto-collapse logic for tablet and compact screens (e.g. iPad Pro 13, iPad Air, Surface, 960px - 1400px):
+  // Automatically defaults to mini/icon-only sidebar to keep the right-side form and tables spacious.
+  const [deskCollapsed, setDeskCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      const isTablet = window.innerWidth <= 1400 && window.innerWidth >= 960;
+      if (isTablet) return true;
+      const saved = localStorage.getItem("sidebar-collapsed");
+      if (saved !== null) return saved === "1";
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 1400 && window.innerWidth >= 960) {
+        setDeskCollapsed(true);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const toggleMenu = () => {
     if (window.matchMedia("(min-width: 960px)").matches) {
       setDeskCollapsed((v) => {
-        localStorage.setItem("sidebar-collapsed", v ? "0" : "1");
-        return !v;
+        const next = !v;
+        localStorage.setItem("sidebar-collapsed", next ? "1" : "0");
+        return next;
       });
     } else {
       setNavOpen(true);
@@ -381,7 +474,7 @@ export default function AppShell({
   return (
     <div
       className={`min-h-screen bg-canvas grid ${
-        deskCollapsed ? "nav:grid-cols-[1fr]" : "nav:grid-cols-[264px_1fr]"
+        deskCollapsed ? "nav:grid-cols-[76px_1fr]" : "nav:grid-cols-[264px_1fr]"
       }`}
     >
       <Sidebar

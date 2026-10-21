@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import {
   FiArrowLeft,
+  FiSave,
   FiChevronLeft,
   FiChevronRight,
   FiDownload,
@@ -161,31 +162,72 @@ export default function ReportEditor() {
     }
   }
 
+  const handleBackToDatasheet = async () => {
+    if (flushRef.current) {
+      try {
+        await flushRef.current();
+      } catch (e) {
+        console.error("Save on back error", e);
+      }
+    }
+    navigate(`/datasheet/${sampleId}`);
+  };
+
+  const handleManualSave = async () => {
+    if (!flushRef.current) return;
+    setIsSaving(true);
+    try {
+      const res = await flushRef.current();
+      if (res && res.ok === false) {
+        throw res.error || new Error("Gagal menyimpan");
+      }
+      toast.success("Semua perubahan berhasil disimpan");
+    } catch (e) {
+      console.error("Manual save error", e);
+      toast.error("Gagal menyimpan perubahan");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const steps = report.data.map((k) => {
     let total = 0,
       missing = 0,
       countL = 0,
       countTB = 0,
       countG = 0;
-    k.sub_klausul.forEach((s) =>
-      s.butir.forEach((b) => {
+
+    (k.sub_klausul || []).forEach((s) => {
+      // Sub-klausul level decision
+      if (s.keputusan === "G") countG++;
+      else if (s.keputusan === "L") countL++;
+      else if (s.keputusan === "TB") countTB++;
+
+      if (!s.butir || s.butir.length === 0) {
         total++;
-        const filled = !!b.keputusan;
-        if (!filled) missing++;
-        if (b.keputusan === "L") countL++;
-        if (b.keputusan === "TB") countTB++;
-        if (b.keputusan === "G") countG++;
-      }),
-    );
+        if (!s.keputusan) missing++;
+      } else {
+        s.butir.forEach((b) => {
+          total++;
+          const filled = !!b.keputusan;
+          if (!filled) missing++;
+          if (b.keputusan === "L") countL++;
+          if (b.keputusan === "TB") countTB++;
+          if (b.keputusan === "G") countG++;
+        });
+      }
+    });
+
     let status = "blue";
     if (countG > 0) status = "red";
-    else if (total > 0 && countTB === total) status = "gray";
+    else if (total > 0 && countTB === total && countL === 0) status = "gray";
     else if (countL > 0) status = "green";
     else if (missing > 0) status = "yellow";
+
     return {
       klausul: k.klausul,
       title: k.judul || "",
-      subCount: k.sub_klausul.length,
+      subCount: (k.sub_klausul || []).length,
       total,
       missingCount: missing,
       status,
@@ -255,7 +297,27 @@ export default function ReportEditor() {
   return (
     <div className="flex flex-col nav:flex-row gap-6">
       {/* Clause navigation */}
-      <aside className="nav:w-[300px] shrink-0 nav:sticky nav:top-[96px] nav:self-start">
+      <aside className="nav:w-[300px] shrink-0 nav:sticky nav:top-[96px] nav:self-start flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <button
+            onClick={handleBackToDatasheet}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-navy-800 hover:text-navy-600 transition-colors"
+          >
+            <FiArrowLeft size={16} /> Kembali ke Datasheet
+          </button>
+          <button
+            onClick={handleManualSave}
+            disabled={isSaving}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold bg-navy-800 text-white hover:bg-navy-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {isSaving ? (
+              <FaSpinner className="animate-spin" size={11} />
+            ) : (
+              <FiSave size={13} />
+            )}
+            Simpan
+          </button>
+        </div>
         <SidebarClauses
           steps={steps}
           activeIndex={activeIndex}
@@ -266,16 +328,32 @@ export default function ReportEditor() {
       {/* Main */}
       <main className="flex-1 min-w-0">
         {/* Header */}
-        <div className="flex flex-col gap-3 nav:flex-row nav:items-start nav:justify-between mb-5">
+        <div className="flex flex-col gap-3 mb-5">
           <div className="min-w-0">
             <div className="text-[13px] text-ink-400">
               Klausul {activeIndex + 1} dari {report.data.length}
             </div>
-            <h1 className="text-2xl font-semibold text-navy-800 tracking-[-0.01em] mt-0.5">
-              {activeClause.klausul} — {activeClause.judul || ""}
-            </h1>
+            <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
+              <h1 className="text-2xl font-semibold text-navy-800 tracking-[-0.01em]">
+                {activeClause.klausul} — {activeClause.judul || ""}
+              </h1>
+              {steps[activeIndex]?.status === "red" && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-bad-bg text-bad-fg border border-bad-fg/40">
+                  Gagal
+                </span>
+              )}
+              {steps[activeIndex]?.status === "green" && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-ok-bg text-ok-fg border border-ok-fg/40">
+                  Lulus
+                </span>
+              )}
+              {steps[activeIndex]?.status === "gray" && (
+                <span className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-warn-bg text-warn-fg border border-warn-fg/40">
+                  Tidak Berlaku
+                </span>
+              )}
+            </div>
           </div>
-          <ReportStatusPill status={report.status} />
         </div>
 
         {/* Fill UI — renders its own conditions card + clause cards */}
@@ -302,10 +380,6 @@ export default function ReportEditor() {
           <div className="flex flex-wrap items-center gap-2">
             {isTechnician && (
               <>
-                <button className={btnGhost} onClick={confirmSaveAndBack}>
-                  <FiArrowLeft size={16} /> Simpan &amp; Kembali
-                </button>
-
                 {!isApproved && (
                   <button
                     className={btnPrimary}
@@ -400,44 +474,7 @@ export default function ReportEditor() {
         />
       </main>
 
-      {/* Save & back confirmation */}
-      {confirmOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(7,25,63,0.42)] p-6"
-          onClick={() => !isSaving && setConfirmOpen(false)}
-        >
-          <div
-            className="bg-paper rounded-3xl shadow-modal w-full max-w-[440px] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-7 pt-6 pb-2">
-              <h3 className="text-xl font-semibold text-navy-800">
-                Simpan perubahan dan kembali?
-              </h3>
-              <p className="text-[13px] text-ink-400 mt-1">
-                Semua perubahan lokal akan dikirim ke server sekarang.
-              </p>
-            </div>
-            <div className="flex justify-end gap-2 px-7 pb-6 pt-4">
-              <button
-                onClick={() => setConfirmOpen(false)}
-                disabled={isSaving}
-                className={btnGhost}
-              >
-                Batal
-              </button>
-              <button
-                onClick={doSaveAndBack}
-                disabled={isSaving}
-                className={btnPrimary}
-              >
-                {isSaving && <FaSpinner className="animate-spin" />}
-                {isSaving ? "Menyimpan…" : "Ya, Simpan Sekarang"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Save & back confirmation modal removed — auto-save handles persistence */}
     </div>
   );
 }

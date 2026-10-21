@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -19,11 +20,11 @@ const httpsConfig =
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), basicSsl()],
   server: {
     host: true, // listen on all interfaces so phones on the LAN can connect
     port: 5173,
-    https: httpsConfig,
+    https: httpsConfig || true,
     // Same-origin proxy to the backend: the phone only ever talks to the
     // HTTPS Vite origin; /api and /uploads are forwarded to Express over
     // localhost. One cert covers everything, no CORS/mixed-content issues.

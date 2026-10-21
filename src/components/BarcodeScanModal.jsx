@@ -3,28 +3,28 @@
 // Camera barcode scanner for physical sample labels (order_no barcodes,
 // e.g. CBT/3801/20-104-04/00132/06/2026-01).
 //
-// Uses the native BarcodeDetector API (Chrome/Edge/Android — no library
-// needed). On browsers without it (iOS Safari), falls back to manual code
-// entry. Resolved codes hit GET /api/samples/lookup and navigate to the
-// datasheet detail.
+// Automatically requests browser camera permission on open and streams live video.
+// Decodes Barcodes (Code 128, Code 39, EAN, etc.) and QR Codes using @zxing/browser.
+// Resolved codes hit GET /api/samples/lookup and navigate to the datasheet detail.
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { FiX, FiCamera, FiSearch, FiPlus, FiRotateCw } from "react-icons/fi";
+import {
+  FiX,
+  FiCamera,
+  FiSearch,
+  FiPlus,
+  FiRotateCw,
+  FiAlertCircle,
+} from "react-icons/fi";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import apiClient from "../api";
 import { parseOrderNo } from "../utils/orderParser";
 
-const SUPPORTED_FORMATS = [
-  "qr_code",
-  "code_128",
-  "code_39",
-  "ean_13",
-  "data_matrix",
-];
-
 export default function BarcodeScanModal({ open, onClose }) {
-  const [supported, setSupported] = useState(true);
-  const [scanning, setScanning] = useState(false);
+  // 'loading' | 'active' | 'denied' | 'unsupported' | 'error'
+  const [cameraState, setCameraState] = useState("loading");
+  const [errorMessage, setErrorMessage] = useState("");
   const [manualCode, setManualCode] = useState("");
   const [busy, setBusy] = useState(false);
   // Scanned code with no existing datasheet → offer to create one
@@ -34,19 +34,24 @@ export default function BarcodeScanModal({ open, onClose }) {
   // Lab list (lab_code → name) for the parsed-code breakdown display
   const [labs, setLabs] = useState([]);
   const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const rafRef = useRef(null);
+  const controlsRef = useRef(null);
   const resolvedRef = useRef(false);
   const navigate = useNavigate();
 
   const stopCamera = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+    if (controlsRef.current) {
+      try {
+        controlsRef.current.stop();
+      } catch {}
+      controlsRef.current = null;
     }
-    setScanning(false);
+    if (videoRef.current && videoRef.current.srcObject) {
+      try {
+        const stream = videoRef.current.srcObject;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
+      } catch {}
+    }
   }, []);
 
   const resolveCode = useCallback(
@@ -61,8 +66,7 @@ export default function BarcodeScanModal({ open, onClose }) {
         const items = res.data.items || [];
         if (items.length === 0) {
           // No datasheet for this code yet → offer to create one with the
-          // scanned order number prefilled (keep resolvedRef=true so the
-          // detect loop stays halted while the prompt is on screen).
+          // scanned order number prefilled
           stopCamera();
           setNotFound(code);
           return;
@@ -87,7 +91,7 @@ export default function BarcodeScanModal({ open, onClose }) {
     apiClient
       .get("/labs")
       .then((res) => setLabs(res.data || []))
-      .catch(() => {}); // breakdown falls back to the raw lab code
+      .catch(() => {});
   }, [open, labs.length]);
 
   // Start camera + detection loop when opened (session bump = rescan)
@@ -96,53 +100,93 @@ export default function BarcodeScanModal({ open, onClose }) {
     resolvedRef.current = false;
     setManualCode("");
     setNotFound(null);
-
-    if (!("BarcodeDetector" in window)) {
-      setSupported(true);
-      return;
-    }
-    setSupported(true);
+    setCameraState("loading");
+    setErrorMessage("");
 
     let cancelled = false;
-    (async () => {
+
+    const startScanner = async () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraState("unsupported");
+        setErrorMessage(
+          "Browser ini tidak mendukung akses kamera atau situs belum berjalan di koneksi aman (HTTPS / localhost).",
+        );
+        return;
+      }
+
+      const codeReader = new BrowserMultiFormatReader();
+
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        });
+        let controls;
+        try {
+          // Request rear camera on mobile / tablet
+          controls = await codeReader.decodeFromConstraints(
+            { video: { facingMode: { ideal: "environment" } }, audio: false },
+            videoRef.current,
+            (result) => {
+              if (cancelled || resolvedRef.current) return;
+              if (result && result.getText()) {
+                resolveCode(result.getText());
+              }
+            },
+          );
+        } catch (constraintErr) {
+          // Fallback to any default camera (e.g. laptop webcam)
+          controls = await codeReader.decodeFromConstraints(
+            { video: true, audio: false },
+            videoRef.current,
+            (result) => {
+              if (cancelled || resolvedRef.current) return;
+              if (result && result.getText()) {
+                resolveCode(result.getText());
+              }
+            },
+          );
+        }
+
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          if (controls) controls.stop();
           return;
         }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        setScanning(true);
 
-        const detector = new window.BarcodeDetector({
-          formats: SUPPORTED_FORMATS,
-        });
-        const tick = async () => {
-          if (cancelled || resolvedRef.current || !videoRef.current) return;
-          try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes.length > 0 && codes[0].rawValue) {
-              resolveCode(codes[0].rawValue);
-              return;
-            }
-          } catch {
-            /* frame not ready — keep looping */
-          }
-          rafRef.current = requestAnimationFrame(tick);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-      } catch {
-        // Camera denied/unavailable → manual entry still works
-        setSupported(false);
+        controlsRef.current = controls;
+        setCameraState("active");
+      } catch (err) {
+        if (cancelled) return;
+        console.warn("Camera access failed:", err);
+        const name = err.name || "";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+          setCameraState("denied");
+          setErrorMessage(
+            "Izin kamera belum diberikan atau diblokir. Silakan klik ikon gembok / kamera pada address bar browser Anda untuk mengizinkan akses kamera.",
+          );
+        } else if (
+          name === "NotFoundError" ||
+          name === "DevicesNotFoundError"
+        ) {
+          setCameraState("error");
+          setErrorMessage(
+            "Tidak ditemukan perangkat kamera yang terhubung pada gadget/laptop ini.",
+          );
+        } else if (
+          name === "NotReadableError" ||
+          name === "TrackStartError"
+        ) {
+          setCameraState("error");
+          setErrorMessage(
+            "Kamera sedang digunakan oleh aplikasi lain. Silakan tutup aplikasi tersebut lalu coba lagi.",
+          );
+        } else {
+          setCameraState("error");
+          setErrorMessage(
+            "Gagal mengakses kamera: " +
+              (err.message || "Pastikan browser mengizinkan kamera."),
+          );
+        }
       }
-    })();
+    };
+
+    startScanner();
 
     return () => {
       cancelled = true;
@@ -154,26 +198,29 @@ export default function BarcodeScanModal({ open, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(7,25,63,0.6)] p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[rgba(7,25,63,0.65)] p-4 backdrop-blur-xs"
       onClick={() => {
         stopCamera();
         onClose();
       }}
     >
       <div
-        className="bg-paper rounded-3xl shadow-modal w-full max-w-[420px] overflow-hidden"
+        className="bg-paper rounded-3xl shadow-modal w-full max-w-[430px] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-line-soft">
           <span className="flex items-center gap-2 text-[15px] font-semibold text-navy-900">
-            <FiCamera size={17} /> Scan Barcode Sampel
+            <FiCamera size={18} className="text-navy-700" /> Scan Barcode
+            Sampel
           </span>
           <button
             onClick={() => {
               stopCamera();
               onClose();
             }}
-            className="w-9 h-9 rounded-full flex items-center justify-center text-ink-500 hover:bg-navy-50"
+            aria-label="Tutup pemindai"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-ink-500 hover:bg-navy-50 transition-colors"
           >
             <FiX size={19} />
           </button>
@@ -186,7 +233,7 @@ export default function BarcodeScanModal({ open, onClose }) {
             <div className="text-[15px] font-semibold text-navy-900">
               Belum ada datasheet untuk kode ini
             </div>
-            <div className="font-mono text-[12px] text-ink-500 mt-1.5 break-all px-2">
+            <div className="font-mono text-[12px] text-ink-500 mt-1.5 break-all px-2 font-bold">
               {notFound}
             </div>
 
@@ -229,7 +276,7 @@ export default function BarcodeScanModal({ open, onClose }) {
                     `/create-report?order_no=${encodeURIComponent(notFound)}`,
                   );
                 }}
-                className="inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-navy-800 text-white text-sm font-semibold hover:bg-navy-700"
+                className="inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-navy-800 text-white text-sm font-semibold hover:bg-navy-700 transition-colors"
               >
                 <FiPlus size={16} /> Buat Datasheet Baru
               </button>
@@ -239,43 +286,68 @@ export default function BarcodeScanModal({ open, onClose }) {
                   setNotFound(null);
                   setSession((s) => s + 1);
                 }}
-                className="inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-paper border border-line text-navy-800 text-sm font-semibold hover:bg-navy-50"
+                className="inline-flex items-center justify-center gap-2 h-11 rounded-xl bg-paper border border-line text-navy-800 text-sm font-semibold hover:bg-navy-50 transition-colors"
               >
                 <FiRotateCw size={15} /> Scan Ulang
               </button>
             </div>
           </div>
-        ) : supported ? (
-          <div className="relative bg-black aspect-[4/3]">
+        ) : cameraState === "active" || cameraState === "loading" ? (
+          /* Active Camera / Loading Permission View */
+          <div className="relative bg-black aspect-[4/3] overflow-hidden flex items-center justify-center">
             <video
               ref={videoRef}
               playsInline
               muted
+              autoPlay
               className="w-full h-full object-cover"
             />
-            {/* Aim frame */}
+
+            {/* Target Reticle / Aim Frame */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-[75%] h-[75%] border-2 border-white/80 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+              <div className="w-[74%] h-[74%] border-2 border-white/85 rounded-2xl shadow-[0_0_0_9999px_rgba(7,25,63,0.45)] relative overflow-hidden">
+                {cameraState === "active" && (
+                  <div className="absolute inset-x-0 top-0 h-[2px] bg-red-500 shadow-[0_0_12px_#ef4444] animate-pulse" />
+                )}
+              </div>
             </div>
-            <div className="absolute bottom-3 inset-x-0 text-center text-white/85 text-[12.5px]">
+
+            {/* Status / Instructions Overlay */}
+            <div className="absolute bottom-3 inset-x-0 text-center text-white/95 text-[12.5px] px-3 font-medium drop-shadow-md">
               {busy
                 ? "Mencari sampel…"
-                : scanning
-                  ? "Arahkan kamera ke barcode pada label sampel"
-                  : "Menyalakan kamera…"}
+                : cameraState === "active"
+                  ? "Arahkan kamera ke barcode / QR code pada label sampel"
+                  : "Menyalakan kamera, silakan izinkan di browser…"}
             </div>
           </div>
         ) : (
-          <div className="px-5 py-6 text-[13px] text-ink-500 bg-navy-50/50">
-            Kamera / pemindai barcode tidak tersedia di browser ini. Masukkan
-            nomor sampel secara manual di bawah.
+          /* Permission Denied or Error State */
+          <div className="px-6 py-8 text-center bg-navy-50/50">
+            <div className="w-13 h-13 mx-auto mb-3.5 rounded-2xl bg-warn-bg text-warn-fg flex items-center justify-center shadow-xs">
+              <FiAlertCircle size={28} />
+            </div>
+            <div className="text-[15px] font-semibold text-navy-900 mb-1.5">
+              {cameraState === "denied"
+                ? "Izin Akses Kamera Diperlukan"
+                : "Kamera Tidak Dapat Digunakan"}
+            </div>
+            <p className="text-[13px] text-ink-500 mb-5 max-w-[320px] mx-auto leading-relaxed">
+              {errorMessage}
+            </p>
+            <button
+              onClick={() => setSession((s) => s + 1)}
+              className="inline-flex items-center gap-2 h-10 px-4 rounded-xl bg-navy-800 text-white text-[13px] font-semibold hover:bg-navy-700 transition-colors"
+            >
+              <FiRotateCw size={15} /> Coba Izinkan Ulang
+            </button>
           </div>
         )}
 
-        {/* Manual fallback — hidden while the not-found prompt is shown */}
+        {/* Manual Input Fallback */}
         {!notFound && (
           <form
-            className="flex gap-2 p-4"
+            className="flex gap-2 p-4 border-t border-line-soft bg-paper"
             onSubmit={(e) => {
               e.preventDefault();
               if (manualCode.trim()) resolveCode(manualCode.trim());
@@ -284,13 +356,13 @@ export default function BarcodeScanModal({ open, onClose }) {
             <input
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
-              placeholder="CBT/3801/20-104-04/…"
-              className="flex-1 px-3.5 py-2.5 border border-line rounded-xl font-mono text-[13px] text-navy-800 outline-none focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/10 placeholder:text-ink-300 placeholder:font-sans"
+              placeholder="Atau ketik manual nomor order / sampel…"
+              className="flex-1 px-3.5 py-2.5 border border-line rounded-xl font-mono text-[13px] text-navy-800 outline-none focus:border-navy-600 focus:ring-[3px] focus:ring-navy-600/10 placeholder:text-ink-400 placeholder:font-sans"
             />
             <button
               type="submit"
               disabled={busy || !manualCode.trim()}
-              className="inline-flex items-center gap-1.5 px-4 rounded-xl bg-navy-800 text-white text-[13px] font-semibold disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 rounded-xl bg-navy-800 text-white text-[13px] font-semibold hover:bg-navy-700 disabled:opacity-50 transition-colors shrink-0"
             >
               <FiSearch size={15} /> Cari
             </button>
