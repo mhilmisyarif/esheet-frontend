@@ -60,20 +60,24 @@ function fmtDate(d) {
   }
 }
 
-function InfoRow({ label, value, mono, editing, onChange, placeholder, type }) {
-  const isEdit = editing && typeof onChange === "function";
+function InfoRow({ label, value, mono, editing, onChange, placeholder, type, renderEdit }) {
+  const isEdit = editing && (typeof onChange === "function" || typeof renderEdit === "function");
   return (
     <div className="grid grid-cols-1 nav:grid-cols-[180px_1fr] gap-1 nav:gap-4 py-3.5 border-b border-line-soft last:border-b-0 nav:items-center">
       <dt className="text-[13px] text-ink-400">{label}</dt>
       <dd>
         {isEdit ? (
-          <input
-            type={type || "text"}
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className={inputCls}
-          />
+          renderEdit ? (
+            renderEdit()
+          ) : (
+            <input
+              type={type || "text"}
+              value={value || ""}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholder}
+              className={inputCls}
+            />
+          )
         ) : (
           <span
             className={`text-sm font-medium text-navy-800 ${
@@ -298,6 +302,7 @@ export default function DatasheetDetail() {
   const [loading, setLoading] = useState(true);
   const [components, setComponents] = useState([]);
   const [images, setImages] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
 
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -307,6 +312,19 @@ export default function DatasheetDetail() {
   const [editing, setEditing] = useState(false);
   const [infoForm, setInfoForm] = useState({});
   const [savingInfo, setSavingInfo] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    apiClient
+      .get("/technicians?status=ACTIVE")
+      .then((res) => {
+        if (mounted && res.data?.data) setTechnicians(res.data.data);
+      })
+      .catch((err) => console.error("Gagal memuat teknisi:", err));
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -375,7 +393,7 @@ export default function DatasheetDetail() {
     const o = sample.order || {};
     setInfoForm({
       applicant: o.applicant || "",
-      applicant_address: o.address || "",
+      applicant_address: o.applicant_address || "",
       brand: sample.brand || "",
       model: sample.model || "",
       factory: sample.factory || "",
@@ -385,6 +403,7 @@ export default function DatasheetDetail() {
       received_date: sample.received_date
         ? sample.received_date.slice(0, 10)
         : "",
+      technician_name: report?.technician_name || "",
     });
     setEditing(true);
   };
@@ -540,6 +559,33 @@ export default function DatasheetDetail() {
         <dl className="px-4 nav:px-6 py-1">
           <InfoRow label="Lab Number" value={order.order_no} mono />
           <InfoRow label="Laboratory" value={order.lab?.name} />
+          <InfoRow
+            label="Nama Teknisi"
+            value={editing ? infoForm.technician_name : report?.technician_name}
+            editing={editing}
+            renderEdit={() => (
+              <select
+                value={infoForm.technician_name || ""}
+                onChange={(e) =>
+                  setInfoForm((f) => ({ ...f, technician_name: e.target.value }))
+                }
+                className={inputCls}
+              >
+                <option value="">-- Pilih Teknisi --</option>
+                {technicians.map((t) => (
+                  <option key={t.id} value={t.name}>
+                    {t.name}
+                  </option>
+                ))}
+                {infoForm.technician_name &&
+                  !technicians.some((t) => t.name === infoForm.technician_name) && (
+                    <option value={infoForm.technician_name}>
+                      {infoForm.technician_name}
+                    </option>
+                  )}
+              </select>
+            )}
+          />
           <InfoRow label="Test standard" value={sample.testStandard?.name} />
           <InfoRow
             label="Applicant"
@@ -547,7 +593,11 @@ export default function DatasheetDetail() {
           />
           <InfoRow
             label="Applicant address"
-            {...editField("applicant_address", order.address, "Alamat pemohon")}
+            {...editField(
+              "applicant_address",
+              order.applicant_address,
+              "Alamat pemohon",
+            )}
           />
           <InfoRow
             label="Brand"

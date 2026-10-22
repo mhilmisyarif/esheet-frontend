@@ -158,20 +158,40 @@ export default function EngineerDashboard() {
             Review and approve submitted datasheets
           </p>
         </div>
-        <div className="inline-flex p-1 bg-navy-50 rounded-xl self-start">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`h-9 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                tab === t.key
-                  ? "bg-paper text-navy-800 shadow-card"
-                  : "text-ink-500 hover:text-navy-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="relative inline-grid grid-cols-2 p-1 bg-navy-50 rounded-xl self-start select-none">
+          {(() => {
+            const activeIdx = TABS.findIndex((t) => t.key === tab);
+            return (
+              activeIdx !== -1 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 bottom-1 rounded-lg bg-paper shadow-card transition-transform duration-200 ease-out pointer-events-none"
+                  style={{
+                    width: "calc((100% - 8px) / 2)",
+                    left: "4px",
+                    transform: `translateX(${activeIdx * 100}%)`,
+                  }}
+                />
+              )
+            );
+          })()}
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`relative z-10 h-9 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer inline-flex items-center justify-center whitespace-nowrap ${
+                  active
+                    ? "text-navy-800"
+                    : "text-ink-500 hover:text-navy-800"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

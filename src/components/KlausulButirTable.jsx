@@ -109,17 +109,20 @@ function Seg({ value, onChange, small, disabled }) {
   const activeIdx = opts.indexOf(value);
 
   return (
-    <div className={`relative inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+    <div
+      className={`relative inline-grid grid-cols-3 bg-white border border-line rounded-[10px] p-[3px] select-none ${
+        disabled ? "opacity-60 pointer-events-none" : ""
+      }`}
+    >
       {/* Sliding background pill */}
       {activeIdx !== -1 && (
         <span
           aria-hidden="true"
-          className={`absolute top-[3px] bottom-[3px] rounded-[7px] transition-all duration-200 ease-out pointer-events-none ${SEG_ACTIVE[value]}`}
+          className={`absolute top-[3px] bottom-[3px] rounded-[7px] transition-transform duration-200 ease-out pointer-events-none shadow-xs ${SEG_ACTIVE[value]}`}
           style={{
-            width: small
-              ? 'calc(33.333% - 2px)'
-              : 'calc(33.333% - 2px)',
-            left: `calc(${activeIdx} * 33.333% + 3px)`,
+            width: "calc((100% - 6px) / 3)",
+            left: "3px",
+            transform: `translateX(${activeIdx * 100}%)`,
           }}
         />
       )}
@@ -132,16 +135,16 @@ function Seg({ value, onChange, small, disabled }) {
             disabled={disabled}
             title={SEG_TITLE[o]}
             onClick={() => onChange(o)}
-            className={`relative z-10 inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
+            className={`relative z-10 inline-flex items-center justify-center font-bold rounded-[7px] transition-colors cursor-pointer ${
               small
-                ? 'min-w-9 h-9 px-2.5 text-xs nav:min-w-7 nav:h-6 nav:px-2 nav:text-[11px]'
-                : 'min-w-11 h-10 px-3 text-[13px] nav:min-w-9 nav:h-[30px] nav:px-2.5 nav:text-xs'
+                ? "w-9 h-9 text-xs nav:w-7 nav:h-6 nav:text-[11px]"
+                : "w-11 h-10 text-[13px] nav:w-9 nav:h-[30px] nav:text-xs"
             } ${
               active
-                ? 'text-white'
+                ? "text-white"
                 : disabled
-                  ? 'text-ink-300 cursor-not-allowed'
-                  : 'text-ink-500 hover:text-navy-800'
+                ? "text-ink-300 cursor-not-allowed"
+                : "text-ink-500 hover:text-navy-800"
             }`}
           >
             {o}
@@ -250,16 +253,37 @@ export default function KlausulButirTable({
     fetchTechnicians();
   }, [labId]);
 
+  const [tableTemplates, setTableTemplates] = useState({});
+
   useEffect(() => {
+    if (!reportId) return;
+    apiClient
+      .get(`/reports/${reportId}/table-templates`)
+      .then((res) => setTableTemplates(res.data || {}))
+      .catch((err) => console.error("Failed to load table templates:", err));
+  }, [reportId]);
+
+  useEffect(() => {
+    const defaultTester =
+      fullReport?.technician_name ||
+      fullReport?.sample?.Report?.technician_name ||
+      fullReport?.technician?.name ||
+      fullReport?.sample?.Report?.technician?.name ||
+      report?.technician_name ||
+      "";
+
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
     cloned.forEach((k) => {
-      if (!k.meta)
+      if (!k.meta) {
         k.meta = {
-          tester_name: "",
+          tester_name: defaultTester,
           test_datetime: "",
           temperature: null,
           humidity: null,
         };
+      } else if (!k.meta.tester_name && defaultTester) {
+        k.meta.tester_name = defaultTester;
+      }
     });
     setLocalKlausulArr(cloned);
     setImagesState(fullReport.images || []);
@@ -815,13 +839,9 @@ export default function KlausulButirTable({
               <CondField label="Nama Teknisi / Penguji">
                 <select
                   value={(k.meta && k.meta.tester_name) || ""}
-                  onChange={(e) =>
-                    updateKlausulMeta(k.klausul, {
-                      tester_name: e.target.value,
-                    })
-                  }
-                  disabled={locked}
-                  className={condCls}
+                  disabled={true}
+                  className="w-full px-3 py-2 border border-line-soft rounded-lg text-sm text-navy-800/80 bg-navy-50/70 outline-none cursor-not-allowed select-none font-medium"
+                  title="Nama teknisi diatur pada Datasheet Info"
                 >
                   <option value="">-- Pilih Teknisi --</option>
                   {technicians.map((tech) => (
@@ -1099,20 +1119,20 @@ export default function KlausulButirTable({
                               </tr>
                             );
                           })}
-                          {/* Structured data tables per sub-clause — renders
-                            nothing when the sub-clause has no template. */}
-                          <tr className="[&:has(td:empty)]:hidden">
-                            <td colSpan={4} className="p-0 empty:hidden">
-                              <div className="px-4 nav:px-5 py-3 empty:hidden">
+                          {/* Structured data tables per sub-clause */}
+                          {((tableTemplates[s.kode] && tableTemplates[s.kode].length > 0) ||
+                            (s.kode === k.sub_klausul[0]?.kode && tableTemplates[String(k.klausul)]?.length > 0)) && (
+                            <tr className="bg-canvas/20">
+                              <td colSpan={4} className="p-4 nav:p-5 border-b border-line">
                                 <TableInstanceEditor
                                   reportId={reportId}
                                   subClauseCode={s.kode}
                                   reportStatus={reportStatus}
                                   userRole={userRole}
                                 />
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
+                            </tr>
+                          )}
                         </React.Fragment>
                       );
                     })}
@@ -1283,14 +1303,17 @@ export default function KlausulButirTable({
                       })}
 
                       {/* Structured data tables per sub-clause (mobile) */}
-                      <div className="px-4 py-3 empty:hidden border-t border-line-soft [&:not(:has(*))]:hidden">
-                        <TableInstanceEditor
-                          reportId={reportId}
-                          subClauseCode={s.kode}
-                          reportStatus={reportStatus}
-                          userRole={userRole}
-                        />
-                      </div>
+                      {((tableTemplates[s.kode] && tableTemplates[s.kode].length > 0) ||
+                        (s.kode === k.sub_klausul[0]?.kode && tableTemplates[String(k.klausul)]?.length > 0)) && (
+                        <div className="px-4 py-3 border-t border-line-soft bg-canvas/20">
+                          <TableInstanceEditor
+                            reportId={reportId}
+                            subClauseCode={s.kode}
+                            reportStatus={reportStatus}
+                            userRole={userRole}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -412,22 +412,23 @@ export default function AppShell({
   const [navOpen, setNavOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
 
-  // Auto-collapse logic for tablet and compact screens (e.g. iPad Pro 13, iPad Air, Surface, 960px - 1400px):
-  // Automatically defaults to mini/icon-only sidebar to keep the right-side form and tables spacious.
+  // Auto-collapse logic for tablet screens (960px - 1200px):
   const [deskCollapsed, setDeskCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
-      const isTablet = window.innerWidth <= 1400 && window.innerWidth >= 960;
-      if (isTablet) return true;
       const saved = localStorage.getItem("sidebar-collapsed");
       if (saved !== null) return saved === "1";
+      const isTablet = window.innerWidth <= 1200 && window.innerWidth >= 960;
+      if (isTablet) return true;
     }
     return false;
   });
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth <= 1400 && window.innerWidth >= 960) {
-        setDeskCollapsed(true);
+      if (localStorage.getItem("sidebar-collapsed") === null) {
+        if (window.innerWidth <= 1200 && window.innerWidth >= 960) {
+          setDeskCollapsed(true);
+        }
       }
     };
     window.addEventListener("resize", handleResize);
@@ -497,7 +498,7 @@ export default function AppShell({
           onOpenMenu={toggleMenu}
           onRequestLogout={() => setShowLogout(true)}
         />
-        <main className="w-full max-w-[1400px] px-4 pt-5 pb-12 nav:px-10 nav:pt-8 nav:pb-16">
+        <main className="w-full flex-1 px-4 pt-5 pb-12 nav:px-8 nav:pt-8 nav:pb-16">
           {children}
         </main>
       </div>
