@@ -17,6 +17,7 @@ import {
 import apiClient from "../api";
 import TableInstanceEditor from "./TableInstanceEditor";
 import SymbolStrip from "./SymbolStrip";
+import { isTableInstanceFailed } from "../utils/tableFormulas";
 
 const REPORT_STATUS = {
   DRAFT: { label: "Draft", cls: "bg-neutral-bg text-neutral-fg" },
@@ -44,7 +45,7 @@ const SEG_ACTIVE = {
   G: "bg-[#d12c45] text-white",
 };
 
-function getKlausulDecisionStatus(k) {
+function getKlausulDecisionStatus(k, allTableInstances = []) {
   let countG = 0;
   let countL = 0;
   let countTB = 0;
@@ -63,6 +64,24 @@ function getKlausulDecisionStatus(k) {
       if (b.keputusan) totalDecisions++;
     });
   });
+
+  // Check if any table instance for this clause has failed
+  const clauseSubCodes = new Set((k?.sub_klausul || []).map((s) => s.kode));
+  clauseSubCodes.add(String(k?.klausul));
+
+  const hasFailedTable = (allTableInstances || []).some((inst) => {
+    const subCode = inst.template?.subClauseCode;
+    if (!subCode) return false;
+    const parentCode = subCode.split(".")[0];
+    if (clauseSubCodes.has(subCode) || clauseSubCodes.has(parentCode)) {
+      return isTableInstanceFailed(inst);
+    }
+    return false;
+  });
+
+  if (hasFailedTable) {
+    countG++;
+  }
 
   if (countG > 0) {
     return {
@@ -195,6 +214,7 @@ export default function KlausulButirTable({
   onDeleteSample,
   userRole,
   userName,
+  onTableStatusChange,
 }) {
   const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
   const [isAutosaving, setIsAutosaving] = useState(false);
@@ -254,14 +274,43 @@ export default function KlausulButirTable({
   }, [labId]);
 
   const [tableTemplates, setTableTemplates] = useState({});
+  const [tableInstances, setTableInstances] = useState([]);
+
+  const loadTableData = useCallback(async () => {
+    if (!reportId) return;
+    try {
+      const [tplRes, instRes] = await Promise.all([
+        apiClient.get(`/reports/${reportId}/table-templates`),
+        apiClient.get(`/reports/${reportId}/table-instances`),
+      ]);
+      setTableTemplates(tplRes.data || {});
+      setTableInstances(instRes.data || []);
+    } catch (err) {
+      console.error("Failed to load table data:", err);
+    }
+  }, [reportId]);
 
   useEffect(() => {
-    if (!reportId) return;
-    apiClient
-      .get(`/reports/${reportId}/table-templates`)
-      .then((res) => setTableTemplates(res.data || {}))
-      .catch((err) => console.error("Failed to load table templates:", err));
-  }, [reportId]);
+    loadTableData();
+  }, [loadTableData]);
+
+  const handleTableInstanceSaved = useCallback(
+    (updatedInst) => {
+      setTableInstances((prev) => {
+        const idx = prev.findIndex((i) => i.id === updatedInst.id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = updatedInst;
+          return copy;
+        }
+        return [...prev, updatedInst];
+      });
+      if (onTableStatusChange) {
+        onTableStatusChange(updatedInst);
+      }
+    },
+    [onTableStatusChange],
+  );
 
   useEffect(() => {
     const defaultTester =
@@ -762,7 +811,7 @@ export default function KlausulButirTable({
                   </div>
                 )}
                 {(() => {
-                  const kStatus = getKlausulDecisionStatus(k);
+                  const kStatus = getKlausulDecisionStatus(k, tableInstances);
                   return (
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                       <div className="flex items-center gap-2">
@@ -1129,6 +1178,7 @@ export default function KlausulButirTable({
                                   subClauseCode={s.kode}
                                   reportStatus={reportStatus}
                                   userRole={userRole}
+                                  onInstanceSaved={handleTableInstanceSaved}
                                 />
                               </td>
                             </tr>
@@ -1311,6 +1361,7 @@ export default function KlausulButirTable({
                             subClauseCode={s.kode}
                             reportStatus={reportStatus}
                             userRole={userRole}
+                            onInstanceSaved={handleTableInstanceSaved}
                           />
                         </div>
                       )}

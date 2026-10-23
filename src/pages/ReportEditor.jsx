@@ -1,5 +1,5 @@
 // src/pages/ReportEditor.jsx
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
@@ -18,6 +18,7 @@ import KlausulButirTable from "../components/KlausulButirTable";
 import KlausulSubmitModal from "../components/KlausulSubmitModal";
 import apiClient from "../api";
 import { useAuth } from "../context/AuthContext";
+import { isTableInstanceFailed } from "../utils/tableFormulas";
 
 const btnPrimary =
   "inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-navy-800 text-white hover:bg-navy-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
@@ -61,6 +62,18 @@ export default function ReportEditor() {
   // modal state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [tableInstances, setTableInstances] = useState([]);
+
+  const fetchTableInstances = useCallback(async (repId) => {
+    const targetId = repId || report?.id;
+    if (!targetId) return;
+    try {
+      const res = await apiClient.get(`/reports/${targetId}/table-instances`);
+      setTableInstances(res.data || []);
+    } catch (err) {
+      console.error("Failed to fetch table instances in ReportEditor:", err);
+    }
+  }, [report?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -78,6 +91,7 @@ export default function ReportEditor() {
         if (!mounted) return;
         setReport(response.data);
         setKlausulStatuses(response.data.klausulStatuses || {});
+        fetchTableInstances(response.data.id);
         setLoading(false);
       })
       .catch((err) => {
@@ -217,6 +231,23 @@ export default function ReportEditor() {
         });
       }
     });
+
+    // Check if any table instance in this clause has failed
+    const clauseSubCodes = new Set((k.sub_klausul || []).map((s) => s.kode));
+    clauseSubCodes.add(String(k.klausul));
+    const hasFailedTable = (tableInstances || []).some((inst) => {
+      const subCode = inst.template?.subClauseCode;
+      if (!subCode) return false;
+      const parentCode = subCode.split(".")[0];
+      if (clauseSubCodes.has(subCode) || clauseSubCodes.has(parentCode)) {
+        return isTableInstanceFailed(inst);
+      }
+      return false;
+    });
+
+    if (hasFailedTable) {
+      countG++;
+    }
 
     let status = "blue";
     if (countG > 0) status = "red";
@@ -365,6 +396,7 @@ export default function ReportEditor() {
           reportStatus={report.status}
           images={images}
           onChangeImages={setImages}
+          onTableStatusChange={() => fetchTableInstances(report?.id)}
           onChangeReport={(updatedKlausuls) => {
             setReport((prev) => {
               const copy = JSON.parse(JSON.stringify(prev));

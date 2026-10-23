@@ -75,7 +75,8 @@ export function resolveComputedCells(cells, columns) {
         }
 
         let passes = false;
-        switch (rule.op) {
+        const op = rule.op || 'lte';
+        switch (op) {
             case 'lte': passes = v <= rule.threshold; break;
             case 'gte': passes = v >= rule.threshold; break;
             case 'lt': passes = v < rule.threshold; break;
@@ -179,4 +180,51 @@ export function getSectionOverallResult(rows, columns) {
     if (results.some(r => r === '')) return '';
     if (results.every(r => r === 'L')) return 'L';
     return 'TB';
+}
+
+/**
+ * Check if a TableInstance has any section evaluated to "G" (failed).
+ * Checks key-value rows and table result columns.
+ */
+export function isTableInstanceFailed(instance) {
+    if (!instance) return false;
+    const def = instance.template?.definition;
+    if (!def || !Array.isArray(def.sections)) return false;
+
+    const sectionsData = instance.data?.sections || {};
+
+    for (let idx = 0; idx < def.sections.length; idx++) {
+        const sec = def.sections[idx];
+        const sData = sectionsData[idx] || {};
+
+        if (sec.type === 'key_value') {
+            const kv = sData.kv || {};
+            for (const r of sec.rows || []) {
+                if (kv[r.id]?.result === 'G') return true;
+            }
+        } else if (sec.type === 'table') {
+            const columns = sec.columns || [];
+            const resultCols = columns.filter((c) => c.isResult);
+            if (resultCols.length > 0) {
+                const fixedRows = sec.fixedRows || [];
+                const addedRows = sData.addedRows || [];
+                const storedRows = sData.rows || {};
+                const allRows = [
+                    ...fixedRows.map((fr) => ({
+                        cells: { ...fr.cells, ...((storedRows[fr.id] || {}).cells || {}) },
+                    })),
+                    ...addedRows.map((ar) => ({
+                        cells: ar.cells || {},
+                    })),
+                ];
+                for (const row of allRows) {
+                    const resolved = resolveComputedCells(row.cells, columns);
+                    for (const rc of resultCols) {
+                        if (resolved[rc.id] === 'G') return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }

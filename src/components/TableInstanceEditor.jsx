@@ -18,6 +18,7 @@ export default function TableInstanceEditor({
   subClauseCode,
   reportStatus,
   userRole,
+  onInstanceSaved,
 }) {
   const [instances, setInstances] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -25,6 +26,9 @@ export default function TableInstanceEditor({
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState({});
   const [dirty, setDirty] = useState({});
+
+  const instancesRef = useRef(instances);
+  instancesRef.current = instances;
 
   const isLocked = reportStatus === "APPROVED";
   const canEdit = !isLocked;
@@ -47,7 +51,9 @@ export default function TableInstanceEditor({
       const res = await apiClient.get(
         `/reports/${reportId}/table-instances?subClauseCode=${encodeURIComponent(subClauseCode)}`,
       );
-      setInstances(res.data || []);
+      const instData = res.data || [];
+      instancesRef.current = instData;
+      setInstances(instData);
 
       // Fetch all templates for this report's standard, grouped by subClauseCode
       const tplRes = await apiClient.get(
@@ -96,19 +102,18 @@ export default function TableInstanceEditor({
 
   // ── Save ─────────────────────────────────────────────────────────────────
   async function saveInstance(instanceId) {
-    const inst = instances.find((i) => i.id === instanceId);
+    const inst = instancesRef.current.find((i) => i.id === instanceId);
     if (!inst) return;
     setSaving((prev) => ({ ...prev, [instanceId]: true }));
     try {
-      const res = await apiClient.put(`/table-instances/${instanceId}`, {
+      await apiClient.put(`/table-instances/${instanceId}`, {
         data: inst.data,
       });
-      setInstances((prev) =>
-        prev.map((i) =>
-          i.id === instanceId ? { ...i, data: res.data.data } : i,
-        ),
-      );
       setDirty((prev) => ({ ...prev, [instanceId]: false }));
+      const updated = instancesRef.current.find((i) => i.id === instanceId);
+      if (updated && onInstanceSaved) {
+        onInstanceSaved(updated);
+      }
     } catch (e) {
       toast.error("Gagal menyimpan tabel");
       console.error(e);
@@ -123,7 +128,10 @@ export default function TableInstanceEditor({
       const res = await apiClient.post(`/reports/${reportId}/table-instances`, {
         templateId,
       });
-      setInstances((prev) => [...prev, res.data]);
+      const next = [...instancesRef.current, res.data];
+      instancesRef.current = next;
+      setInstances(next);
+      if (onInstanceSaved) onInstanceSaved(res.data);
       toast.success("Tabel baru ditambahkan");
     } catch (e) {
       toast.error(e.response?.data?.error || "Gagal menambah tabel");
@@ -135,7 +143,9 @@ export default function TableInstanceEditor({
     if (!window.confirm("Hapus tabel ini?")) return;
     try {
       await apiClient.delete(`/table-instances/${instanceId}`);
-      setInstances((prev) => prev.filter((i) => i.id !== instanceId));
+      const next = instancesRef.current.filter((i) => i.id !== instanceId);
+      instancesRef.current = next;
+      setInstances(next);
       toast.success("Tabel dihapus");
     } catch (e) {
       toast.error(e.response?.data?.error || "Gagal menghapus tabel");
@@ -144,38 +154,46 @@ export default function TableInstanceEditor({
 
   // ── Cell mutations ───────────────────────────────────────────────────────
   function setCellValue(instanceId, sectionIdx, rowId, colId, value) {
-    setInstances((prev) =>
-      prev.map((inst) => {
-        if (inst.id !== instanceId) return inst;
-        const data = JSON.parse(JSON.stringify(inst.data || {}));
-        if (!data.sections) data.sections = {};
-        if (!data.sections[sectionIdx])
-          data.sections[sectionIdx] = { rows: {} };
-        if (!data.sections[sectionIdx].rows)
-          data.sections[sectionIdx].rows = {};
-        if (!data.sections[sectionIdx].rows[rowId])
-          data.sections[sectionIdx].rows[rowId] = { cells: {} };
-        data.sections[sectionIdx].rows[rowId].cells[colId] = value;
-        return { ...inst, data };
-      }),
-    );
+    const next = instancesRef.current.map((inst) => {
+      if (inst.id !== instanceId) return inst;
+      const data = JSON.parse(JSON.stringify(inst.data || {}));
+      if (!data.sections) data.sections = {};
+      if (!data.sections[sectionIdx])
+        data.sections[sectionIdx] = { rows: {} };
+      if (!data.sections[sectionIdx].rows)
+        data.sections[sectionIdx].rows = {};
+      if (!data.sections[sectionIdx].rows[rowId])
+        data.sections[sectionIdx].rows[rowId] = { cells: {} };
+      data.sections[sectionIdx].rows[rowId].cells[colId] = value;
+      return { ...inst, data };
+    });
+    instancesRef.current = next;
+    setInstances(next);
+    const changedInst = next.find((i) => i.id === instanceId);
+    if (changedInst && onInstanceSaved) {
+      onInstanceSaved(changedInst);
+    }
     markDirty(instanceId);
   }
 
   function setKvValue(instanceId, sectionIdx, rowId, field, value) {
-    setInstances((prev) =>
-      prev.map((inst) => {
-        if (inst.id !== instanceId) return inst;
-        const data = JSON.parse(JSON.stringify(inst.data || {}));
-        if (!data.sections) data.sections = {};
-        if (!data.sections[sectionIdx]) data.sections[sectionIdx] = { kv: {} };
-        if (!data.sections[sectionIdx].kv) data.sections[sectionIdx].kv = {};
-        if (!data.sections[sectionIdx].kv[rowId])
-          data.sections[sectionIdx].kv[rowId] = {};
-        data.sections[sectionIdx].kv[rowId][field] = value;
-        return { ...inst, data };
-      }),
-    );
+    const next = instancesRef.current.map((inst) => {
+      if (inst.id !== instanceId) return inst;
+      const data = JSON.parse(JSON.stringify(inst.data || {}));
+      if (!data.sections) data.sections = {};
+      if (!data.sections[sectionIdx]) data.sections[sectionIdx] = { kv: {} };
+      if (!data.sections[sectionIdx].kv) data.sections[sectionIdx].kv = {};
+      if (!data.sections[sectionIdx].kv[rowId])
+        data.sections[sectionIdx].kv[rowId] = {};
+      data.sections[sectionIdx].kv[rowId][field] = value;
+      return { ...inst, data };
+    });
+    instancesRef.current = next;
+    setInstances(next);
+    const changedInst = next.find((i) => i.id === instanceId);
+    if (changedInst && onInstanceSaved) {
+      onInstanceSaved(changedInst);
+    }
     markDirty(instanceId);
   }
 

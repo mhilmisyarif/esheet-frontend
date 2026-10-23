@@ -1260,6 +1260,7 @@ function PassRuleEditor({ col, columns, cIdx, sIdx, updateColumn }) {
             onChange={(e) =>
               updateColumn(sIdx, cIdx, "passRule", {
                 ...rule,
+                op: rule.op || "lte",
                 col: e.target.value,
               })
             }
