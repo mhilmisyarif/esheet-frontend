@@ -1,6 +1,7 @@
 // src/pages/CreateReport.jsx
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate, Link, useSearchParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { parseOrderNo } from "../utils/orderParser";
 import toast from "react-hot-toast";
 import {
@@ -94,6 +95,15 @@ const btnGhost =
 
 export default function CreateReport() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const dashboardPath =
+    user?.role === "ENGINEER" || user?.role === "DRAFTER"
+      ? "/engineer-dashboard"
+      : user?.role === "ADMIN"
+      ? "/admin-dashboard"
+      : "/technician-dashboard";
+
   // Barcode-scan flow prefills the order number via ?order_no=…
   // (BarcodeScanModal navigates here when a scanned code has no datasheet)
   const [searchParams] = useSearchParams();
@@ -117,6 +127,8 @@ export default function CreateReport() {
   const [selectedStandardId, setSelectedStandardId] = useState("");
   const [testingType, setTestingType] = useState("FULL");
   const [selectedClauses, setSelectedClauses] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
+  const [selectedTechnician, setSelectedTechnician] = useState("");
   const [errors, setErrors] = useState({});
 
   // Derived state
@@ -129,6 +141,31 @@ export default function CreateReport() {
       .then((res) => setLabs(res.data))
       .catch(() => toast.error("Gagal memuat data lab"));
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchTechs = async () => {
+      try {
+        const params = new URLSearchParams({ status: "ACTIVE" });
+        if (detectedLab?.id) {
+          params.append("labId", detectedLab.id);
+        }
+        const res = await apiClient.get(`/technicians?${params.toString()}`);
+        let list = res.data?.data || [];
+        if (list.length === 0 && detectedLab?.id) {
+          const allRes = await apiClient.get("/technicians?status=ACTIVE");
+          list = allRes.data?.data || [];
+        }
+        if (mounted) setTechnicians(list);
+      } catch (err) {
+        console.error("Gagal memuat teknisi:", err);
+      }
+    };
+    fetchTechs();
+    return () => {
+      mounted = false;
+    };
+  }, [detectedLab]);
 
   // Auto-detect lab from the order number
   useEffect(() => {
@@ -179,6 +216,7 @@ export default function CreateReport() {
         applicant_address: applicantAddress,
         testStandardId: parseInt(selectedStandardId, 10),
         testingType,
+        technician_name: selectedTechnician || undefined,
         factory,
         brand,
         model,
@@ -206,7 +244,7 @@ export default function CreateReport() {
     <div className="max-w-[760px] mx-auto">
       {/* Page head */}
       <Link
-        to="/technician-dashboard"
+        to={dashboardPath}
         className="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-navy-800 mb-3 transition-colors"
       >
         <FiArrowLeft size={14} /> Back to dashboard
@@ -325,6 +363,24 @@ export default function CreateReport() {
                 <option value="VERIFICATION">Verification</option>
               </SelectField>
 
+              <SelectField
+                label="Nama Teknisi"
+                value={selectedTechnician}
+                onChange={setSelectedTechnician}
+                hint={
+                  technicians.length === 0
+                    ? "Memuat data teknisi..."
+                    : "Pilih teknisi yang ditugaskan untuk pengujian ini"
+                }
+              >
+                <option value="">-- Pilih Teknisi --</option>
+                {technicians.map((t) => (
+                  <option key={t.id} value={t.name}>
+                    {t.name} {t.employeeId ? `(${t.employeeId})` : ""}
+                  </option>
+                ))}
+              </SelectField>
+
               {testingType === "VERIFICATION" && selectedStandard && (
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[13px] font-medium text-navy-800">
@@ -437,7 +493,7 @@ export default function CreateReport() {
                 {testingType === "FULL" ? "Full test" : "Verification"}
                 {testingType === "VERIFICATION" &&
                   ` (${selectedClauses.length} clauses)`}{" "}
-                · order {orderNo}
+                · order {orderNo}{selectedTechnician ? ` · Teknisi: ${selectedTechnician}` : ""}
               </div>
             </>
           )}
@@ -463,7 +519,7 @@ export default function CreateReport() {
               <>
                 <button
                   className={btnGhost}
-                  onClick={() => navigate("/technician-dashboard")}
+                  onClick={() => navigate(dashboardPath)}
                 >
                   Cancel
                 </button>

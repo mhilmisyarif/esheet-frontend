@@ -10,7 +10,6 @@ import {
   FiMoreHorizontal,
   FiFileText,
   FiDownload,
-  FiUserPlus,
   FiSettings,
 } from "react-icons/fi";
 import apiClient from "../api";
@@ -139,10 +138,10 @@ export default function AdminDashboard() {
         const mapped = list.map((s) => ({
           id: s.id,
           reportId: s.Report?.id || null,
-          orderNo: s.order?.order_no || "—",
-          client: s.order?.applicant || "—",
-          sampleName: s.name || "—",
-          brandModel: [s.brand, s.model].filter(Boolean).join(" ") || "—",
+          orderNo: s.order?.order_no || "â€”",
+          client: s.order?.applicant || "â€”",
+          sampleName: s.name || "â€”",
+          brandModel: [s.brand, s.model].filter(Boolean).join(" ") || "â€”",
           status: s.Report?.status || "DRAFT",
           createdAt: s.order?.createdAt || null,
         }));
@@ -207,10 +206,10 @@ export default function AdminDashboard() {
     setMenu({ row, top: rect.bottom + 6, left: rect.right - 200 });
   }
 
-  // Downloading datasheet remains exactly the same[cite: 3]
+  // Downloading datasheet
   async function downloadDatasheet(row) {
     if (!row.reportId) {
-      toast.error("This datasheet does not have a report yet.");
+      toast.error("Datasheet ini belum memiliki report.");
       return;
     }
     try {
@@ -228,10 +227,42 @@ export default function AdminDashboard() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-      toast.success("Datasheet downloaded.");
+      const password = res.headers["x-datasheet-password"];
+      toast.success(
+        password
+          ? `Datasheet diunduh. Password: ${password}`
+          : "Datasheet diunduh.",
+        { duration: password ? 10000 : 4000 },
+      );
     } catch (err) {
       console.error("Datasheet download failed:", err);
-      toast.error("Failed to download datasheet.");
+      toast.error(err.response?.data?.error || "Gagal mengunduh datasheet.");
+    }
+  }
+
+  // Downloading draft Word doc
+  async function downloadDraft(row) {
+    if (!row.reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/reports/${row.reportId}/download/draft`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DRAFT-${row.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Draft diunduh.");
+    } catch (err) {
+      console.error("Draft download failed:", err);
+      toast.error("Gagal mengunduh draft.");
     }
   }
 
@@ -250,7 +281,7 @@ export default function AdminDashboard() {
 
         <div className="flex items-center gap-3">
           {/* Reusing Tabs style from EngineerDashboard[cite: 4] */}
-          <div className="inline-flex p-1 bg-navy-50 rounded-xl self-start mr-2">
+          <div className="inline-flex p-1 bg-navy-50 rounded-xl self-start">
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -265,13 +296,6 @@ export default function AdminDashboard() {
               </button>
             ))}
           </div>
-
-          <button
-            onClick={() => navigate("/register-user")}
-            className="inline-flex items-center justify-center gap-2 h-11 px-[18px] rounded-xl text-sm font-semibold bg-navy-800 text-white hover:bg-navy-700 transition-colors whitespace-nowrap"
-          >
-            <FiUserPlus size={18} /> Register User
-          </button>
         </div>
       </div>
 
@@ -320,7 +344,7 @@ export default function AdminDashboard() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search client or lab no…"
+                    placeholder="Search client or lab noâ€¦"
                     className="flex-1 min-w-0 bg-transparent outline-none text-sm text-navy-800 placeholder:text-ink-400"
                   />
                 </div>
@@ -357,7 +381,7 @@ export default function AdminDashboard() {
                         colSpan={7}
                         className="px-4 py-12 text-center text-sm text-ink-400"
                       >
-                        Loading datasheets…
+                        Loading datasheetsâ€¦
                       </td>
                     </tr>
                   ) : pageRows.length === 0 ? (
@@ -427,7 +451,7 @@ export default function AdminDashboard() {
             <div className="flex flex-col gap-3 nav:flex-row nav:items-center nav:justify-between px-4 nav:px-6 py-4 border-t border-line-soft text-[13px] text-ink-400">
               <span>
                 Showing{" "}
-                {filtered.length === 0 ? 0 : (safePage - 1) * PER_PAGE + 1}–
+                {filtered.length === 0 ? 0 : (safePage - 1) * PER_PAGE + 1}â€“
                 {(safePage - 1) * PER_PAGE + pageRows.length} of{" "}
                 {filtered.length}
               </span>
@@ -495,18 +519,26 @@ export default function AdminDashboard() {
             >
               <FiFileText size={15} /> View Datasheet
             </button>
-            {menu.row.status === "APPROVED" && (
-              <button
-                onClick={() => {
-                  const row = menu.row;
-                  setMenu(null);
-                  downloadDatasheet(row);
-                }}
-                className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
-              >
-                <FiDownload size={15} /> Download Datasheet
-              </button>
-            )}
+            <button
+              onClick={() => {
+                const row = menu.row;
+                setMenu(null);
+                downloadDraft(row);
+              }}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+            >
+              <FiDownload size={15} /> Download Draft
+            </button>
+            <button
+              onClick={() => {
+                const row = menu.row;
+                setMenu(null);
+                downloadDatasheet(row);
+              }}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+            >
+              <FiDownload size={15} /> Download Datasheet
+            </button>
           </div>
         </>
       )}

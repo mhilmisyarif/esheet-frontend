@@ -1,6 +1,6 @@
 // src/pages/EngineerDashboard.jsx
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   FiSearch,
@@ -53,12 +53,55 @@ function fmtDate(d) {
 
 export default function EngineerDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const savedState = useMemo(() => {
+    if (location.state?.from === "report-editor" || location.state?.lastClickedId) {
+      return location.state;
+    }
+    try {
+      const str = sessionStorage.getItem("engineer_dashboard_state");
+      return str ? JSON.parse(str) : null;
+    } catch {
+      return null;
+    }
+  }, [location.state]);
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("IN_PROGRESS");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [tab, setTab] = useState(() => savedState?.tab || "IN_PROGRESS");
+  const [search, setSearch] = useState(() => savedState?.search || "");
+  const [page, setPage] = useState(() => savedState?.page || 1);
   const [menu, setMenu] = useState(null); // { row, top, left }
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setPage(1);
+  }, [tab, search]);
+
+  // Keep sessionStorage in sync
+  useEffect(() => {
+    try {
+      const prev = JSON.parse(
+        sessionStorage.getItem("engineer_dashboard_state") || "{}"
+      );
+      sessionStorage.setItem(
+        "engineer_dashboard_state",
+        JSON.stringify({
+          ...prev,
+          tab,
+          search,
+          page,
+        })
+      );
+    } catch {
+      // Ignore storage errors
+    }
+  }, [tab, search, page]);
 
   useEffect(() => {
     let mounted = true;
@@ -104,16 +147,72 @@ export default function EngineerDashboard() {
     );
   }, [rows, search]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [tab, search]);
-
   const pages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const safePage = Math.min(page, pages);
   const pageRows = filtered.slice(
     (safePage - 1) * PER_PAGE,
     safePage * PER_PAGE
   );
+
+  const didScrollRef = useRef(false);
+
+  // Restore scroll position & highlight the last clicked row
+  useEffect(() => {
+    if (loading || rows.length === 0 || didScrollRef.current) return;
+    const targetId = location.state?.lastClickedId || savedState?.lastClickedId;
+    if (!targetId) return;
+
+    // Check if target item is in the current filtered list and adjust page if needed
+    const itemIndex = filtered.findIndex((r) => r.id === targetId);
+    if (itemIndex !== -1) {
+      const targetPage = Math.floor(itemIndex / PER_PAGE) + 1;
+      if (page !== targetPage) {
+        setPage(targetPage);
+        return;
+      }
+    }
+
+    didScrollRef.current = true;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`datasheet-row-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-navy-600", "bg-sky-50");
+        setTimeout(() => {
+          el.classList.remove("ring-2", "ring-navy-600", "bg-sky-50");
+        }, 2200);
+      } else if (savedState?.scrollY) {
+        window.scrollTo({ top: savedState.scrollY, behavior: "smooth" });
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [loading, rows, filtered, page, location.state, savedState]);
+
+  const handleOpenReport = (sampleId) => {
+    const stateToSave = {
+      tab,
+      page,
+      search,
+      lastClickedId: sampleId,
+      scrollY: window.scrollY || window.pageYOffset || 0,
+    };
+    try {
+      sessionStorage.setItem(
+        "engineer_dashboard_state",
+        JSON.stringify(stateToSave)
+      );
+    } catch {
+      // Ignore storage errors
+    }
+
+    navigate(`/reports/${sampleId}`, {
+      state: {
+        from: "/engineer-dashboard",
+        ...stateToSave,
+      },
+    });
+  };
 
   function openRowMenu(e, row) {
     e.stopPropagation();
@@ -146,6 +245,41 @@ export default function EngineerDashboard() {
     }
   }
 
+  async function downloadDatasheet(row) {
+    if (!row.reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/reports/${row.reportId}/download/datasheet`,
+        { responseType: "blob" }
+      );
+      const url = window.URL.createObjectURL(
+        new Blob([res.data], { type: "application/pdf" })
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DATASHEET-${row.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      const password = res.headers["x-datasheet-password"];
+      toast.success(
+        password
+          ? `Datasheet diunduh. Password: ${password}`
+          : "Datasheet diunduh.",
+        { duration: password ? 10000 : 4000 }
+      );
+    } catch (err) {
+      console.error("Datasheet download failed:", err);
+      toast.error(
+        err.response?.data?.error || "Gagal mengunduh datasheet."
+      );
+    }
+  }
+
   return (
     <div>
       {/* Page head */}
@@ -158,20 +292,40 @@ export default function EngineerDashboard() {
             Review and approve submitted datasheets
           </p>
         </div>
-        <div className="inline-flex p-1 bg-navy-50 rounded-xl self-start">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`h-9 px-4 rounded-lg text-sm font-semibold transition-colors ${
-                tab === t.key
-                  ? "bg-paper text-navy-800 shadow-card"
-                  : "text-ink-500 hover:text-navy-800"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="relative inline-grid grid-cols-2 p-1 bg-navy-50 rounded-xl self-start select-none">
+          {(() => {
+            const activeIdx = TABS.findIndex((t) => t.key === tab);
+            return (
+              activeIdx !== -1 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 bottom-1 rounded-lg bg-paper shadow-card transition-transform duration-200 ease-out pointer-events-none"
+                  style={{
+                    width: "calc((100% - 8px) / 2)",
+                    left: "4px",
+                    transform: `translateX(${activeIdx * 100}%)`,
+                  }}
+                />
+              )
+            );
+          })()}
+          {TABS.map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`relative z-10 h-9 px-4 rounded-lg text-sm font-semibold transition-colors cursor-pointer inline-flex items-center justify-center whitespace-nowrap ${
+                  active
+                    ? "text-navy-800"
+                    : "text-ink-500 hover:text-navy-800"
+                }`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -224,8 +378,9 @@ export default function EngineerDashboard() {
             pageRows.map((r) => (
               <div
                 key={`m-${r.id}`}
-                onClick={() => navigate(`/reports/${r.id}`)}
-                className="px-4 py-3.5 flex items-start gap-3 active:bg-navy-50 cursor-pointer"
+                id={`datasheet-row-${r.id}`}
+                onClick={() => handleOpenReport(r.id)}
+                className="px-4 py-3.5 flex items-start gap-3 active:bg-navy-50 cursor-pointer rounded-xl transition-all duration-300"
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -309,8 +464,9 @@ export default function EngineerDashboard() {
                 pageRows.map((r, i) => (
                   <tr
                     key={r.id}
-                    onClick={() => navigate(`/reports/${r.id}`)}
-                    className="group cursor-pointer hover:bg-navy-50 transition-colors"
+                    id={`datasheet-row-${r.id}`}
+                    onClick={() => handleOpenReport(r.id)}
+                    className="group cursor-pointer hover:bg-navy-50 transition-all duration-300"
                   >
                     <td className={`${CELL} text-sm text-ink-400 tabular-nums`}>
                       {String((safePage - 1) * PER_PAGE + i + 1).padStart(
@@ -405,7 +561,7 @@ export default function EngineerDashboard() {
               onClick={() => {
                 const row = menu.row;
                 setMenu(null);
-                navigate(`/reports/${row.id}`);
+                handleOpenReport(row.id);
               }}
               className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
             >
@@ -421,6 +577,16 @@ export default function EngineerDashboard() {
               className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
             >
               <FiDownload size={15} /> Download Draft
+            </button>
+            <button
+              onClick={() => {
+                const row = menu.row;
+                setMenu(null);
+                downloadDatasheet(row);
+              }}
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-md text-[13px] text-navy-800 hover:bg-navy-50 text-left transition-colors"
+            >
+              <FiDownload size={15} /> Download Datasheet
             </button>
           </div>
         </>
