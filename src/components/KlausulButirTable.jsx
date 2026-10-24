@@ -216,7 +216,15 @@ export default function KlausulButirTable({
   userName,
   onTableStatusChange,
 }) {
-  const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
+  const [localKlausulArr, setLocalKlausulArr] = useState(() => {
+    const arr = JSON.parse(JSON.stringify(report.klausul || []));
+    arr.forEach((k) => {
+      if (!k.meta) k.meta = {};
+      if (k.meta.temperature == null) k.meta.temperature = 25.0;
+      if (k.meta.humidity == null) k.meta.humidity = 60;
+    });
+    return arr;
+  });
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [imagesState, setImagesState] = useState(report.images || []);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -327,11 +335,19 @@ export default function KlausulButirTable({
         k.meta = {
           tester_name: defaultTester,
           test_datetime: "",
-          temperature: null,
-          humidity: null,
+          temperature: 25.0,
+          humidity: 60,
         };
-      } else if (!k.meta.tester_name && defaultTester) {
-        k.meta.tester_name = defaultTester;
+      } else {
+        if (!k.meta.tester_name && defaultTester) {
+          k.meta.tester_name = defaultTester;
+        }
+        if (k.meta.temperature == null) {
+          k.meta.temperature = 25.0;
+        }
+        if (k.meta.humidity == null) {
+          k.meta.humidity = 60;
+        }
       }
     });
     setLocalKlausulArr(cloned);
@@ -929,11 +945,11 @@ export default function KlausulButirTable({
                 <input
                   type="number"
                   step="0.1"
-                  value={k.meta && (k.meta.temperature ?? "")}
+                  value={k.meta && k.meta.temperature != null ? k.meta.temperature : 25}
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, {
                       temperature:
-                        e.target.value === "" ? null : Number(e.target.value),
+                        e.target.value === "" ? 25 : Number(e.target.value),
                     })
                   }
                   readOnly={locked}
@@ -945,11 +961,11 @@ export default function KlausulButirTable({
                 <input
                   type="number"
                   step="0.1"
-                  value={k.meta && (k.meta.humidity ?? "")}
+                  value={k.meta && k.meta.humidity != null ? k.meta.humidity : 60}
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, {
                       humidity:
-                        e.target.value === "" ? null : Number(e.target.value),
+                        e.target.value === "" ? 60 : Number(e.target.value),
                     })
                   }
                   readOnly={locked}

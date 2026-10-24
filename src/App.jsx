@@ -16,6 +16,7 @@ import ManageStandards from "./pages/ManageStandards";
 import DatasheetDetail from "./pages/DatasheetDetail";
 import AppShell from "./components/AppShell";
 import RegisterUser from "./pages/RegisterUser";
+import ManageUsers from "./pages/ManageUsers";
 import AdminDashboard from "./pages/AdminDashboard";
 
 const SITE_SUFFIX = "E-Datasheet | Sucofindo SBU Lab";
@@ -27,6 +28,7 @@ function getPageTitle(pathname) {
   if (pathname === "/admin-dashboard") return `Beranda Admin - ${SITE_SUFFIX}`;
   if (pathname === "/create-report") return `Registrasi Sampel Baru - ${SITE_SUFFIX}`;
   if (pathname === "/manage-standards") return `Manajemen Standar - ${SITE_SUFFIX}`;
+  if (pathname === "/manage-users") return `Manajemen Pengguna - ${SITE_SUFFIX}`;
   if (pathname === "/register-user") return `Registrasi Pengguna - ${SITE_SUFFIX}`;
   if (pathname.startsWith("/datasheet/")) return `Detail Datasheet - ${SITE_SUFFIX}`;
   if (pathname.startsWith("/reports/")) return `Pengisian Klausul Uji - ${SITE_SUFFIX}`;
@@ -82,7 +84,7 @@ function Header() {
   );
 }
 
-// Legacy layout — kept for every screen that hasn't been redesigned yet.
+// Legacy layout â€” kept for every screen that hasn't been redesigned yet.
 function LegacyLayout({ children }) {
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,12 +99,12 @@ export default function App() {
     <>
       <PageTitleUpdater />
       <Routes>
-        {/* Public Route — full-screen, no layout chrome */}
+        {/* Public Route â€” full-screen, no layout chrome */}
         <Route path="/login" element={<LoginPage />} />
 
         {/* Protected Routes */}
         <Route element={<ProtectedRoute />}>
-          {/* Redesigned — uses the E-Datasheet app shell */}
+          {/* Redesigned â€” uses the E-Datasheet app shell */}
           <Route
             path="/technician-dashboard"
             element={
@@ -170,9 +172,17 @@ export default function App() {
             }
           />
           <Route
+            path="/manage-users"
+            element={
+              <AppShell crumbs={["Admin", "Manage Users"]}>
+                <ManageUsers />
+              </AppShell>
+            }
+          />
+          <Route
             path="/register-user"
             element={
-              <AppShell crumbs={["Admin", "Register User"]}>
+              <AppShell crumbs={["Admin", "Manage Users", "Register User"]}>
                 <RegisterUser />
               </AppShell>
             }

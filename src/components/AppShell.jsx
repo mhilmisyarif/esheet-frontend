@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -6,6 +6,7 @@ import {
   ClipboardList,
   BookOpen,
   User,
+  Users,
   Menu as MenuIcon,
   X as XIcon,
   ChevronDown,
@@ -55,6 +56,12 @@ const ADMIN_NAV = [
     label: "Dashboard",
     Icon: LayoutDashboard,
     path: "/admin-dashboard",
+  },
+  {
+    key: "users",
+    label: "Manage Users",
+    Icon: Users,
+    path: "/manage-users",
   },
   {
     key: "standards",
@@ -458,6 +465,21 @@ export default function AppShell({
     nav = ENGINEER_NAV;
   }
 
+  const rolePrefix =
+    user?.role === "ENGINEER"
+      ? "Engineer"
+      : user?.role === "ADMIN"
+      ? "Admin"
+      : "Technician";
+
+  const displayCrumbs = useMemo(() => {
+    if (!crumbs || crumbs.length === 0) return crumbs;
+    if (crumbs[0] === "Technician" && user?.role && user.role !== "TECHNICIAN") {
+      return [rolePrefix, ...crumbs.slice(1)];
+    }
+    return crumbs;
+  }, [crumbs, user?.role, rolePrefix]);
+
   useEffect(() => {
     document.body.style.overflow = navOpen ? "hidden" : "";
     return () => {
@@ -494,7 +516,7 @@ export default function AppShell({
 
       <div className="min-w-0 flex flex-col">
         <Topbar
-          crumbs={crumbs}
+          crumbs={displayCrumbs}
           onOpenMenu={toggleMenu}
           onRequestLogout={() => setShowLogout(true)}
         />

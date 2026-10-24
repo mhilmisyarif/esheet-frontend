@@ -1,6 +1,6 @@
 // src/pages/ReportEditor.jsx
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import {
@@ -49,6 +49,17 @@ export default function ReportEditor() {
   const { sampleId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const canReview =
+    user?.role === "ENGINEER" ||
+    user?.role === "ADMIN" ||
+    user?.role === "DRAFTER";
+
+  // Back navigation: ONLY role ENGINEER (and DRAFTER from engineer-dashboard) returns to /engineer-dashboard.
+  // ADMIN and TECHNICIAN return to /datasheet/:sampleId
+  const isEngineerOnly =
+    user?.role === "ENGINEER" ||
+    (user?.role !== "ADMIN" && location.state?.from === "/engineer-dashboard");
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -147,8 +158,19 @@ export default function ReportEditor() {
   }
 
   async function doSaveAndBack() {
+    const returnPath = isEngineerOnly ? "/engineer-dashboard" : `/datasheet/${sampleId}`;
+    const returnState = isEngineerOnly
+      ? {
+          from: "report-editor",
+          lastClickedId: sampleId,
+          tab: location.state?.tab,
+          page: location.state?.page,
+          search: location.state?.search,
+        }
+      : undefined;
+
     if (!flushRef.current) {
-      navigate("/");
+      navigate(returnPath, { state: returnState });
       return;
     }
     setIsSaving(true);
@@ -161,13 +183,13 @@ export default function ReportEditor() {
 
       if (res && res.count === 0) {
         setConfirmOpen(false);
-        navigate("/");
+        navigate(returnPath, { state: returnState });
         return;
       }
 
       toast.success(`Perubahan berhasil disimpan.`);
       setConfirmOpen(false);
-      setTimeout(() => navigate("/"), 400);
+      setTimeout(() => navigate(returnPath, { state: returnState }), 400);
     } catch (e) {
       console.error("Save failed", e);
       toast.error("Gagal menyimpan perubahan. Coba lagi.");
@@ -184,7 +206,19 @@ export default function ReportEditor() {
         console.error("Save on back error", e);
       }
     }
-    navigate(`/datasheet/${sampleId}`);
+    if (isEngineerOnly) {
+      navigate("/engineer-dashboard", {
+        state: {
+          from: "report-editor",
+          lastClickedId: sampleId,
+          tab: location.state?.tab,
+          page: location.state?.page,
+          search: location.state?.search,
+        },
+      });
+    } else {
+      navigate(`/datasheet/${sampleId}`);
+    }
   };
 
   const handleManualSave = async () => {
@@ -310,8 +344,36 @@ export default function ReportEditor() {
     }
   };
 
-  const isEngineer = user?.role === "ENGINEER" || user?.role === "ADMIN";
+  const handleDownloadDraft = async () => {
+    try {
+      const response = await apiClient.get(
+        `/reports/${report.id}/download/draft`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `DRAFT-${report.id}.docx`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Draft berhasil diunduh.");
+    } catch (error) {
+      console.error("Draft download failed:", error);
+      toast.error("Gagal mengunduh Draft.");
+    }
+  };
+
   const isTechnician = user?.role === "TECHNICIAN" || user?.role === "ADMIN";
+  const canDownloadDraft =
+    user?.role === "ENGINEER" ||
+    user?.role === "ADMIN" ||
+    user?.role === "DRAFTER";
+  const canDownloadDatasheet =
+    user?.role === "TECHNICIAN" ||
+    user?.role === "ENGINEER" ||
+    user?.role === "ADMIN";
   const isApproved = report.status === "APPROVED";
 
   const draftCount = (report.data || []).filter((k) => {
@@ -331,10 +393,13 @@ export default function ReportEditor() {
       <aside className="nav:w-[300px] shrink-0 nav:sticky nav:top-[96px] nav:self-start flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2 px-0.5">
           <button
+            type="button"
             onClick={handleBackToDatasheet}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-navy-800 hover:text-navy-600 transition-colors"
+            className="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-navy-800 transition-colors cursor-pointer w-fit"
+            title={isEngineerOnly ? "Back to dashboard" : "Back to datasheet"}
           >
-            <FiArrowLeft size={16} /> Kembali ke Datasheet
+            <FiArrowLeft size={14} />{" "}
+            {isEngineerOnly ? "Back to dashboard" : "Back to datasheet"}
           </button>
           <button
             onClick={handleManualSave}
@@ -410,31 +475,21 @@ export default function ReportEditor() {
         {/* Footer controls */}
         <div className="mt-5 flex flex-col gap-4 nav:flex-row nav:items-center nav:justify-between">
           <div className="flex flex-wrap items-center gap-2">
-            {isTechnician && (
-              <>
-                {!isApproved && (
-                  <button
-                    className={btnPrimary}
-                    onClick={() => setSubmitModalOpen(true)}
-                  >
-                    <FiSend size={16} /> Submit Klausul
-                    {draftCount > 0 && (
-                      <span className="ml-0.5 bg-white/20 text-xs px-1.5 py-0.5 rounded-full">
-                        {draftCount}
-                      </span>
-                    )}
-                  </button>
+            {isTechnician && !isApproved && (
+              <button
+                className={btnPrimary}
+                onClick={() => setSubmitModalOpen(true)}
+              >
+                <FiSend size={16} /> Submit Klausul
+                {draftCount > 0 && (
+                  <span className="ml-0.5 bg-white/20 text-xs px-1.5 py-0.5 rounded-full">
+                    {draftCount}
+                  </span>
                 )}
-
-                {hasApprovedKlausul && (
-                  <button className={btnSoft} onClick={handleDownloadDatasheet}>
-                    <FiDownload size={16} /> Download Datasheet
-                  </button>
-                )}
-              </>
+              </button>
             )}
 
-            {isEngineer && !isApproved && (
+            {canReview && !isApproved && (
               <button
                 className={btnPrimary}
                 onClick={() => setSubmitModalOpen(true)}
@@ -445,6 +500,18 @@ export default function ReportEditor() {
                     {reviewCount}
                   </span>
                 )}
+              </button>
+            )}
+
+            {canDownloadDraft && (
+              <button className={btnSoft} onClick={handleDownloadDraft}>
+                <FiDownload size={16} /> Download Draft
+              </button>
+            )}
+
+            {canDownloadDatasheet && (hasApprovedKlausul || isApproved) && (
+              <button className={btnSoft} onClick={handleDownloadDatasheet}>
+                <FiDownload size={16} /> Download Datasheet
               </button>
             )}
 

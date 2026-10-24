@@ -1,6 +1,7 @@
 // src/pages/DatasheetDetail.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import {
@@ -14,6 +15,7 @@ import {
   FiImage,
   FiLock,
   FiUploadCloud,
+  FiDownload,
 } from "react-icons/fi";
 import apiClient from "../api";
 
@@ -297,6 +299,14 @@ const EMPTY_DRAFT = {
 export default function DatasheetDetail() {
   const { sampleId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const dashboardPath =
+    user?.role === "ENGINEER" || user?.role === "DRAFTER"
+      ? "/engineer-dashboard"
+      : user?.role === "ADMIN"
+      ? "/admin-dashboard"
+      : "/technician-dashboard";
 
   const [sample, setSample] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -462,10 +472,70 @@ export default function DatasheetDetail() {
   const td = (cls = "") =>
     `px-4 py-3.5 border-b border-line-soft text-sm ${cls}`;
 
+  const handleDownloadDraft = async () => {
+    if (!reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(`/reports/${reportId}/download/draft`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DRAFT-${sample.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Draft berhasil diunduh.");
+    } catch (err) {
+      console.error("Draft download failed:", err);
+      toast.error("Gagal mengunduh draft.");
+    }
+  };
+
+  const handleDownloadDatasheet = async () => {
+    if (!reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/reports/${reportId}/download/datasheet`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(
+        new Blob([res.data], { type: "application/pdf" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DATASHEET-${sample.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      const password = res.headers["x-datasheet-password"];
+      toast.success(
+        password
+          ? `Datasheet diunduh. Password: ${password}`
+          : "Datasheet diunduh.",
+        { duration: password ? 10000 : 4000 },
+      );
+    } catch (err) {
+      console.error("Datasheet download failed:", err);
+      toast.error(
+        err.response?.data?.error ||
+          "Gagal mengunduh Datasheet. Pastikan ada klausul yang sudah disetujui.",
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to="/technician-dashboard"
+        to={dashboardPath}
         className="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-navy-800 transition-colors w-fit"
       >
         <FiArrowLeft size={14} /> Back to dashboard
@@ -503,9 +573,42 @@ export default function DatasheetDetail() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={report?.status || "DRAFT"} />
+          {reportId && (
+            <>
+              {(user?.role === "ENGINEER" ||
+                user?.role === "ADMIN" ||
+                user?.role === "DRAFTER") && (
+                <button
+                  className={btnGhostSm}
+                  onClick={handleDownloadDraft}
+                  title="Download Draft Word"
+                >
+                  <FiDownload size={14} /> Download Draft
+                </button>
+              )}
+              {(user?.role === "ENGINEER" ||
+                user?.role === "ADMIN" ||
+                user?.role === "TECHNICIAN") && (
+                <button
+                  className={btnGhostSm}
+                  onClick={handleDownloadDatasheet}
+                  title="Download Datasheet PDF"
+                >
+                  <FiDownload size={14} /> Download Datasheet
+                </button>
+              )}
+            </>
+          )}
           <button
             className={btnPrimarySm}
-            onClick={() => navigate(`/reports/${sample.id}`)}
+            onClick={() =>
+              navigate(`/reports/${sample.id}`, {
+                state: {
+                  from: dashboardPath,
+                  lastClickedId: sample.id,
+                },
+              })
+            }
           >
             <FiEdit3 size={14} /> Open Klausul Editor
           </button>

@@ -105,8 +105,8 @@ export default function RegisterUser() {
 
       toast.success("User registered successfully!");
 
-      // Optionally redirect back to an admin dashboard or user list
-      navigate("/admin-dashboard");
+      // Redirect back to user list
+      navigate("/manage-users");
     } catch (err) {
       console.error(err);
       toast.error(err.response?.data?.message || "Failed to register user");
@@ -119,10 +119,10 @@ export default function RegisterUser() {
     <div className="max-w-[500px] mx-auto">
       {/* Page head using your exact layout */}
       <Link
-        to="/admin-dashboard"
+        to="/manage-users"
         className="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-navy-800 mb-3 transition-colors"
       >
-        <FiArrowLeft size={14} /> Back to dashboard
+        <FiArrowLeft size={14} /> Back to users
       </Link>
       <h1 className="text-2xl nav:text-[28px] font-semibold text-navy-800 tracking-[-0.01em]">
         Register New User
