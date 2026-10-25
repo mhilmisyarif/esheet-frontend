@@ -1,6 +1,7 @@
 // src/pages/DatasheetDetail.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 import { FaSpinner } from "react-icons/fa";
 import {
@@ -14,6 +15,7 @@ import {
   FiImage,
   FiLock,
   FiUploadCloud,
+  FiDownload,
 } from "react-icons/fi";
 import apiClient from "../api";
 
@@ -60,20 +62,24 @@ function fmtDate(d) {
   }
 }
 
-function InfoRow({ label, value, mono, editing, onChange, placeholder, type }) {
-  const isEdit = editing && typeof onChange === "function";
+function InfoRow({ label, value, mono, editing, onChange, placeholder, type, renderEdit }) {
+  const isEdit = editing && (typeof onChange === "function" || typeof renderEdit === "function");
   return (
     <div className="grid grid-cols-1 nav:grid-cols-[180px_1fr] gap-1 nav:gap-4 py-3.5 border-b border-line-soft last:border-b-0 nav:items-center">
       <dt className="text-[13px] text-ink-400">{label}</dt>
       <dd>
         {isEdit ? (
-          <input
-            type={type || "text"}
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            className={inputCls}
-          />
+          renderEdit ? (
+            renderEdit()
+          ) : (
+            <input
+              type={type || "text"}
+              value={value || ""}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholder}
+              className={inputCls}
+            />
+          )
         ) : (
           <span
             className={`text-sm font-medium text-navy-800 ${
@@ -293,11 +299,20 @@ const EMPTY_DRAFT = {
 export default function DatasheetDetail() {
   const { sampleId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const dashboardPath =
+    user?.role === "ENGINEER" || user?.role === "DRAFTER"
+      ? "/engineer-dashboard"
+      : user?.role === "ADMIN"
+      ? "/admin-dashboard"
+      : "/technician-dashboard";
 
   const [sample, setSample] = useState(null);
   const [loading, setLoading] = useState(true);
   const [components, setComponents] = useState([]);
   const [images, setImages] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
 
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
@@ -307,6 +322,19 @@ export default function DatasheetDetail() {
   const [editing, setEditing] = useState(false);
   const [infoForm, setInfoForm] = useState({});
   const [savingInfo, setSavingInfo] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    apiClient
+      .get("/technicians?status=ACTIVE")
+      .then((res) => {
+        if (mounted && res.data?.data) setTechnicians(res.data.data);
+      })
+      .catch((err) => console.error("Gagal memuat teknisi:", err));
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -375,7 +403,7 @@ export default function DatasheetDetail() {
     const o = sample.order || {};
     setInfoForm({
       applicant: o.applicant || "",
-      applicant_address: o.address || "",
+      applicant_address: o.applicant_address || "",
       brand: sample.brand || "",
       model: sample.model || "",
       factory: sample.factory || "",
@@ -385,6 +413,7 @@ export default function DatasheetDetail() {
       received_date: sample.received_date
         ? sample.received_date.slice(0, 10)
         : "",
+      technician_name: report?.technician_name || "",
     });
     setEditing(true);
   };
@@ -443,10 +472,70 @@ export default function DatasheetDetail() {
   const td = (cls = "") =>
     `px-4 py-3.5 border-b border-line-soft text-sm ${cls}`;
 
+  const handleDownloadDraft = async () => {
+    if (!reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(`/reports/${reportId}/download/draft`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DRAFT-${sample.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success("Draft berhasil diunduh.");
+    } catch (err) {
+      console.error("Draft download failed:", err);
+      toast.error("Gagal mengunduh draft.");
+    }
+  };
+
+  const handleDownloadDatasheet = async () => {
+    if (!reportId) {
+      toast.error("Datasheet ini belum memiliki report.");
+      return;
+    }
+    try {
+      const res = await apiClient.get(
+        `/reports/${reportId}/download/datasheet`,
+        { responseType: "blob" },
+      );
+      const url = window.URL.createObjectURL(
+        new Blob([res.data], { type: "application/pdf" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `DATASHEET-${sample.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      const password = res.headers["x-datasheet-password"];
+      toast.success(
+        password
+          ? `Datasheet diunduh. Password: ${password}`
+          : "Datasheet diunduh.",
+        { duration: password ? 10000 : 4000 },
+      );
+    } catch (err) {
+      console.error("Datasheet download failed:", err);
+      toast.error(
+        err.response?.data?.error ||
+          "Gagal mengunduh Datasheet. Pastikan ada klausul yang sudah disetujui.",
+      );
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <Link
-        to="/technician-dashboard"
+        to={dashboardPath}
         className="inline-flex items-center gap-1.5 text-[13px] text-ink-500 hover:text-navy-800 transition-colors w-fit"
       >
         <FiArrowLeft size={14} /> Back to dashboard
@@ -484,9 +573,42 @@ export default function DatasheetDetail() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill status={report?.status || "DRAFT"} />
+          {reportId && (
+            <>
+              {(user?.role === "ENGINEER" ||
+                user?.role === "ADMIN" ||
+                user?.role === "DRAFTER") && (
+                <button
+                  className={btnGhostSm}
+                  onClick={handleDownloadDraft}
+                  title="Download Draft Word"
+                >
+                  <FiDownload size={14} /> Download Draft
+                </button>
+              )}
+              {(user?.role === "ENGINEER" ||
+                user?.role === "ADMIN" ||
+                user?.role === "TECHNICIAN") && (
+                <button
+                  className={btnGhostSm}
+                  onClick={handleDownloadDatasheet}
+                  title="Download Datasheet PDF"
+                >
+                  <FiDownload size={14} /> Download Datasheet
+                </button>
+              )}
+            </>
+          )}
           <button
             className={btnPrimarySm}
-            onClick={() => navigate(`/reports/${sample.id}`)}
+            onClick={() =>
+              navigate(`/reports/${sample.id}`, {
+                state: {
+                  from: dashboardPath,
+                  lastClickedId: sample.id,
+                },
+              })
+            }
           >
             <FiEdit3 size={14} /> Open Klausul Editor
           </button>
@@ -540,6 +662,33 @@ export default function DatasheetDetail() {
         <dl className="px-4 nav:px-6 py-1">
           <InfoRow label="Lab Number" value={order.order_no} mono />
           <InfoRow label="Laboratory" value={order.lab?.name} />
+          <InfoRow
+            label="Nama Teknisi"
+            value={editing ? infoForm.technician_name : report?.technician_name}
+            editing={editing}
+            renderEdit={() => (
+              <select
+                value={infoForm.technician_name || ""}
+                onChange={(e) =>
+                  setInfoForm((f) => ({ ...f, technician_name: e.target.value }))
+                }
+                className={inputCls}
+              >
+                <option value="">-- Pilih Teknisi --</option>
+                {technicians.map((t) => (
+                  <option key={t.id} value={t.name}>
+                    {t.name}
+                  </option>
+                ))}
+                {infoForm.technician_name &&
+                  !technicians.some((t) => t.name === infoForm.technician_name) && (
+                    <option value={infoForm.technician_name}>
+                      {infoForm.technician_name}
+                    </option>
+                  )}
+              </select>
+            )}
+          />
           <InfoRow label="Test standard" value={sample.testStandard?.name} />
           <InfoRow
             label="Applicant"
@@ -547,7 +696,11 @@ export default function DatasheetDetail() {
           />
           <InfoRow
             label="Applicant address"
-            {...editField("applicant_address", order.address, "Alamat pemohon")}
+            {...editField(
+              "applicant_address",
+              order.applicant_address,
+              "Alamat pemohon",
+            )}
           />
           <InfoRow
             label="Brand"

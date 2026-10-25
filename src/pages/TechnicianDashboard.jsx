@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import toast from "react-hot-toast";
 import {
   FiSearch,
@@ -111,6 +112,15 @@ function FilterDropdown({ label, value, options, onChange }) {
 
 export default function TechnicianDashboard() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (user?.role === "ENGINEER" || user?.role === "DRAFTER") {
+      navigate("/engineer-dashboard", { replace: true });
+    } else if (user?.role === "ADMIN") {
+      navigate("/admin-dashboard", { replace: true });
+    }
+  }, [user, navigate]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("All");

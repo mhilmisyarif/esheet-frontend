@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -6,6 +6,7 @@ import {
   ClipboardList,
   BookOpen,
   User,
+  Users,
   Menu as MenuIcon,
   X as XIcon,
   ChevronDown,
@@ -55,6 +56,12 @@ const ADMIN_NAV = [
     label: "Dashboard",
     Icon: LayoutDashboard,
     path: "/admin-dashboard",
+  },
+  {
+    key: "users",
+    label: "Manage Users",
+    Icon: Users,
+    path: "/manage-users",
   },
   {
     key: "standards",
@@ -412,22 +419,23 @@ export default function AppShell({
   const [navOpen, setNavOpen] = useState(false);
   const [showLogout, setShowLogout] = useState(false);
 
-  // Auto-collapse logic for tablet and compact screens (e.g. iPad Pro 13, iPad Air, Surface, 960px - 1400px):
-  // Automatically defaults to mini/icon-only sidebar to keep the right-side form and tables spacious.
+  // Auto-collapse logic for tablet screens (960px - 1200px):
   const [deskCollapsed, setDeskCollapsed] = useState(() => {
     if (typeof window !== "undefined") {
-      const isTablet = window.innerWidth <= 1400 && window.innerWidth >= 960;
-      if (isTablet) return true;
       const saved = localStorage.getItem("sidebar-collapsed");
       if (saved !== null) return saved === "1";
+      const isTablet = window.innerWidth <= 1200 && window.innerWidth >= 960;
+      if (isTablet) return true;
     }
     return false;
   });
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth <= 1400 && window.innerWidth >= 960) {
-        setDeskCollapsed(true);
+      if (localStorage.getItem("sidebar-collapsed") === null) {
+        if (window.innerWidth <= 1200 && window.innerWidth >= 960) {
+          setDeskCollapsed(true);
+        }
       }
     };
     window.addEventListener("resize", handleResize);
@@ -456,6 +464,21 @@ export default function AppShell({
   } else if (user?.role === "ENGINEER" || user?.role === "DRAFTER") {
     nav = ENGINEER_NAV;
   }
+
+  const rolePrefix =
+    user?.role === "ENGINEER"
+      ? "Engineer"
+      : user?.role === "ADMIN"
+      ? "Admin"
+      : "Technician";
+
+  const displayCrumbs = useMemo(() => {
+    if (!crumbs || crumbs.length === 0) return crumbs;
+    if (crumbs[0] === "Technician" && user?.role && user.role !== "TECHNICIAN") {
+      return [rolePrefix, ...crumbs.slice(1)];
+    }
+    return crumbs;
+  }, [crumbs, user?.role, rolePrefix]);
 
   useEffect(() => {
     document.body.style.overflow = navOpen ? "hidden" : "";
@@ -493,11 +516,11 @@ export default function AppShell({
 
       <div className="min-w-0 flex flex-col">
         <Topbar
-          crumbs={crumbs}
+          crumbs={displayCrumbs}
           onOpenMenu={toggleMenu}
           onRequestLogout={() => setShowLogout(true)}
         />
-        <main className="w-full max-w-[1400px] px-4 pt-5 pb-12 nav:px-10 nav:pt-8 nav:pb-16">
+        <main className="w-full flex-1 px-4 pt-5 pb-12 nav:px-8 nav:pt-8 nav:pb-16">
           {children}
         </main>
       </div>

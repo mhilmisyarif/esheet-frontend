@@ -17,6 +17,7 @@ import {
 import apiClient from "../api";
 import TableInstanceEditor from "./TableInstanceEditor";
 import SymbolStrip from "./SymbolStrip";
+import { isTableInstanceFailed } from "../utils/tableFormulas";
 
 const REPORT_STATUS = {
   DRAFT: { label: "Draft", cls: "bg-neutral-bg text-neutral-fg" },
@@ -44,7 +45,7 @@ const SEG_ACTIVE = {
   G: "bg-[#d12c45] text-white",
 };
 
-function getKlausulDecisionStatus(k) {
+function getKlausulDecisionStatus(k, allTableInstances = []) {
   let countG = 0;
   let countL = 0;
   let countTB = 0;
@@ -63,6 +64,24 @@ function getKlausulDecisionStatus(k) {
       if (b.keputusan) totalDecisions++;
     });
   });
+
+  // Check if any table instance for this clause has failed
+  const clauseSubCodes = new Set((k?.sub_klausul || []).map((s) => s.kode));
+  clauseSubCodes.add(String(k?.klausul));
+
+  const hasFailedTable = (allTableInstances || []).some((inst) => {
+    const subCode = inst.template?.subClauseCode;
+    if (!subCode) return false;
+    const parentCode = subCode.split(".")[0];
+    if (clauseSubCodes.has(subCode) || clauseSubCodes.has(parentCode)) {
+      return isTableInstanceFailed(inst);
+    }
+    return false;
+  });
+
+  if (hasFailedTable) {
+    countG++;
+  }
 
   if (countG > 0) {
     return {
@@ -109,17 +128,20 @@ function Seg({ value, onChange, small, disabled }) {
   const activeIdx = opts.indexOf(value);
 
   return (
-    <div className={`relative inline-flex bg-white border border-line rounded-[10px] p-[3px] gap-0.5 ${disabled ? 'opacity-60 pointer-events-none' : ''}`}>
+    <div
+      className={`relative inline-grid grid-cols-3 bg-white border border-line rounded-[10px] p-[3px] select-none ${
+        disabled ? "opacity-60 pointer-events-none" : ""
+      }`}
+    >
       {/* Sliding background pill */}
       {activeIdx !== -1 && (
         <span
           aria-hidden="true"
-          className={`absolute top-[3px] bottom-[3px] rounded-[7px] transition-all duration-200 ease-out pointer-events-none ${SEG_ACTIVE[value]}`}
+          className={`absolute top-[3px] bottom-[3px] rounded-[7px] transition-transform duration-200 ease-out pointer-events-none shadow-xs ${SEG_ACTIVE[value]}`}
           style={{
-            width: small
-              ? 'calc(33.333% - 2px)'
-              : 'calc(33.333% - 2px)',
-            left: `calc(${activeIdx} * 33.333% + 3px)`,
+            width: "calc((100% - 6px) / 3)",
+            left: "3px",
+            transform: `translateX(${activeIdx * 100}%)`,
           }}
         />
       )}
@@ -132,16 +154,16 @@ function Seg({ value, onChange, small, disabled }) {
             disabled={disabled}
             title={SEG_TITLE[o]}
             onClick={() => onChange(o)}
-            className={`relative z-10 inline-flex items-center justify-center font-bold rounded-[7px] transition-colors ${
+            className={`relative z-10 inline-flex items-center justify-center font-bold rounded-[7px] transition-colors cursor-pointer ${
               small
-                ? 'min-w-9 h-9 px-2.5 text-xs nav:min-w-7 nav:h-6 nav:px-2 nav:text-[11px]'
-                : 'min-w-11 h-10 px-3 text-[13px] nav:min-w-9 nav:h-[30px] nav:px-2.5 nav:text-xs'
+                ? "w-9 h-9 text-xs nav:w-7 nav:h-6 nav:text-[11px]"
+                : "w-11 h-10 text-[13px] nav:w-9 nav:h-[30px] nav:text-xs"
             } ${
               active
-                ? 'text-white'
+                ? "text-white"
                 : disabled
-                  ? 'text-ink-300 cursor-not-allowed'
-                  : 'text-ink-500 hover:text-navy-800'
+                ? "text-ink-300 cursor-not-allowed"
+                : "text-ink-500 hover:text-navy-800"
             }`}
           >
             {o}
@@ -192,8 +214,17 @@ export default function KlausulButirTable({
   onDeleteSample,
   userRole,
   userName,
+  onTableStatusChange,
 }) {
-  const [localKlausulArr, setLocalKlausulArr] = useState(report.klausul || []);
+  const [localKlausulArr, setLocalKlausulArr] = useState(() => {
+    const arr = JSON.parse(JSON.stringify(report.klausul || []));
+    arr.forEach((k) => {
+      if (!k.meta) k.meta = {};
+      if (k.meta.temperature == null) k.meta.temperature = 25.0;
+      if (k.meta.humidity == null) k.meta.humidity = 60;
+    });
+    return arr;
+  });
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [imagesState, setImagesState] = useState(report.images || []);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -250,16 +281,74 @@ export default function KlausulButirTable({
     fetchTechnicians();
   }, [labId]);
 
+  const [tableTemplates, setTableTemplates] = useState({});
+  const [tableInstances, setTableInstances] = useState([]);
+
+  const loadTableData = useCallback(async () => {
+    if (!reportId) return;
+    try {
+      const [tplRes, instRes] = await Promise.all([
+        apiClient.get(`/reports/${reportId}/table-templates`),
+        apiClient.get(`/reports/${reportId}/table-instances`),
+      ]);
+      setTableTemplates(tplRes.data || {});
+      setTableInstances(instRes.data || []);
+    } catch (err) {
+      console.error("Failed to load table data:", err);
+    }
+  }, [reportId]);
+
   useEffect(() => {
+    loadTableData();
+  }, [loadTableData]);
+
+  const handleTableInstanceSaved = useCallback(
+    (updatedInst) => {
+      setTableInstances((prev) => {
+        const idx = prev.findIndex((i) => i.id === updatedInst.id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = updatedInst;
+          return copy;
+        }
+        return [...prev, updatedInst];
+      });
+      if (onTableStatusChange) {
+        onTableStatusChange(updatedInst);
+      }
+    },
+    [onTableStatusChange],
+  );
+
+  useEffect(() => {
+    const defaultTester =
+      fullReport?.technician_name ||
+      fullReport?.sample?.Report?.technician_name ||
+      fullReport?.technician?.name ||
+      fullReport?.sample?.Report?.technician?.name ||
+      report?.technician_name ||
+      "";
+
     const cloned = JSON.parse(JSON.stringify(report.klausul || []));
     cloned.forEach((k) => {
-      if (!k.meta)
+      if (!k.meta) {
         k.meta = {
-          tester_name: "",
+          tester_name: defaultTester,
           test_datetime: "",
-          temperature: null,
-          humidity: null,
+          temperature: 25.0,
+          humidity: 60,
         };
+      } else {
+        if (!k.meta.tester_name && defaultTester) {
+          k.meta.tester_name = defaultTester;
+        }
+        if (k.meta.temperature == null) {
+          k.meta.temperature = 25.0;
+        }
+        if (k.meta.humidity == null) {
+          k.meta.humidity = 60;
+        }
+      }
     });
     setLocalKlausulArr(cloned);
     setImagesState(fullReport.images || []);
@@ -738,7 +827,7 @@ export default function KlausulButirTable({
                   </div>
                 )}
                 {(() => {
-                  const kStatus = getKlausulDecisionStatus(k);
+                  const kStatus = getKlausulDecisionStatus(k, tableInstances);
                   return (
                     <div className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                       <div className="flex items-center gap-2">
@@ -815,13 +904,9 @@ export default function KlausulButirTable({
               <CondField label="Nama Teknisi / Penguji">
                 <select
                   value={(k.meta && k.meta.tester_name) || ""}
-                  onChange={(e) =>
-                    updateKlausulMeta(k.klausul, {
-                      tester_name: e.target.value,
-                    })
-                  }
-                  disabled={locked}
-                  className={condCls}
+                  disabled={true}
+                  className="w-full px-3 py-2 border border-line-soft rounded-lg text-sm text-navy-800/80 bg-navy-50/70 outline-none cursor-not-allowed select-none font-medium"
+                  title="Nama teknisi diatur pada Datasheet Info"
                 >
                   <option value="">-- Pilih Teknisi --</option>
                   {technicians.map((tech) => (
@@ -860,11 +945,11 @@ export default function KlausulButirTable({
                 <input
                   type="number"
                   step="0.1"
-                  value={k.meta && (k.meta.temperature ?? "")}
+                  value={k.meta && k.meta.temperature != null ? k.meta.temperature : 25}
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, {
                       temperature:
-                        e.target.value === "" ? null : Number(e.target.value),
+                        e.target.value === "" ? 25 : Number(e.target.value),
                     })
                   }
                   readOnly={locked}
@@ -876,11 +961,11 @@ export default function KlausulButirTable({
                 <input
                   type="number"
                   step="0.1"
-                  value={k.meta && (k.meta.humidity ?? "")}
+                  value={k.meta && k.meta.humidity != null ? k.meta.humidity : 60}
                   onChange={(e) =>
                     updateKlausulMeta(k.klausul, {
                       humidity:
-                        e.target.value === "" ? null : Number(e.target.value),
+                        e.target.value === "" ? 60 : Number(e.target.value),
                     })
                   }
                   readOnly={locked}
@@ -1099,20 +1184,21 @@ export default function KlausulButirTable({
                               </tr>
                             );
                           })}
-                          {/* Structured data tables per sub-clause — renders
-                            nothing when the sub-clause has no template. */}
-                          <tr className="[&:has(td:empty)]:hidden">
-                            <td colSpan={4} className="p-0 empty:hidden">
-                              <div className="px-4 nav:px-5 py-3 empty:hidden">
+                          {/* Structured data tables per sub-clause */}
+                          {((tableTemplates[s.kode] && tableTemplates[s.kode].length > 0) ||
+                            (s.kode === k.sub_klausul[0]?.kode && tableTemplates[String(k.klausul)]?.length > 0)) && (
+                            <tr className="bg-canvas/20">
+                              <td colSpan={4} className="p-4 nav:p-5 border-b border-line">
                                 <TableInstanceEditor
                                   reportId={reportId}
                                   subClauseCode={s.kode}
                                   reportStatus={reportStatus}
                                   userRole={userRole}
+                                  onInstanceSaved={handleTableInstanceSaved}
                                 />
-                              </div>
-                            </td>
-                          </tr>
+                              </td>
+                            </tr>
+                          )}
                         </React.Fragment>
                       );
                     })}
@@ -1283,14 +1369,18 @@ export default function KlausulButirTable({
                       })}
 
                       {/* Structured data tables per sub-clause (mobile) */}
-                      <div className="px-4 py-3 empty:hidden border-t border-line-soft [&:not(:has(*))]:hidden">
-                        <TableInstanceEditor
-                          reportId={reportId}
-                          subClauseCode={s.kode}
-                          reportStatus={reportStatus}
-                          userRole={userRole}
-                        />
-                      </div>
+                      {((tableTemplates[s.kode] && tableTemplates[s.kode].length > 0) ||
+                        (s.kode === k.sub_klausul[0]?.kode && tableTemplates[String(k.klausul)]?.length > 0)) && (
+                        <div className="px-4 py-3 border-t border-line-soft bg-canvas/20">
+                          <TableInstanceEditor
+                            reportId={reportId}
+                            subClauseCode={s.kode}
+                            reportStatus={reportStatus}
+                            userRole={userRole}
+                            onInstanceSaved={handleTableInstanceSaved}
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
