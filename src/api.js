@@ -19,6 +19,11 @@ apiClient.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        // The default JSON Content-Type makes axios serialize FormData to JSON.
+        // Drop it so the browser sends multipart with the proper boundary.
+        if (config.data instanceof FormData) {
+            config.headers.setContentType(undefined);
+        }
         return config;
     },
     (error) => {
